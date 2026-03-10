@@ -1,0 +1,30 @@
+[tool.poetry]
+name = "dormant-llm-hunter"
+version = "0.1.0"
+description = "Isolating backdoors in language models via activation analysis"
+authors = ["Kelley Brady"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.13,<3.15"
+jsinfer = "*"             # Jane Street's library
+pandas = ">=2.0.0"
+pyarrow = "^23.0.1"       # Required for Parquet writing
+duckdb = "^1.5"        # Fast analytical querying
+mlflow = "^3.10.1"
+torch = "^2.10.0"          # For tensor manipulation
+jax = "^0.9.1"           # For gradient-based token optimization later
+jaxlib = "^0.9.1"
+scikit-learn = "^1.8.0"
+joblib = "^1.5.3"
+ # For PCA and clustering
+
+[tool.poetry.group.dev.dependencies]
+watchdog = "^6.0.0"       # For active execution monitoring
+ruff = "^0.15.5"           # Fast linting
+pytest = "^9.0.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

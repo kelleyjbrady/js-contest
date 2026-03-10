@@ -1,0 +1,37 @@
+services:
+  hunter-app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION}
+        POETRY_VERSION: ${POETRY_VERSION}
+    container_name: dormant-hunter-app
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+      - ./README.md:/app/README.md
+      # (Removed the secrets.json mount)
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow-server:5000
+      # Inject the API key directly into the container's OS environment
+      - JANE_STREET_API_KEY=${JANE_STREET_API_KEY} 
+    depends_on:
+      - mlflow-server
+    command: sleep infinity
+
+  mlflow-server:
+    # Use the MLflow version from the .env file
+    image: ghcr.io/mlflow/mlflow:${MLFLOW_VERSION}
+    container_name: mlflow-server
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data/mlruns:/mlflow/mlruns
+    command: >
+      mlflow server
+      --backend-store-uri sqlite:////mlflow/mlruns/mlflow.db
+      --default-artifact-root /mlflow/mlruns
+      --host 0.0.0.0

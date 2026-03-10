@@ -148,7 +148,7 @@ def augment_with_gemini(
     seed_prompts: list[str],
     variations_per_seed: int = 5,
     seed_styles: list[str] | None = None,
-    duplicity_mode = False
+    duplicity_mode=False,
 ) -> list[str]:
     """Uses the Gemini API to rewrite and augment seed prompts for maximum variance."""
     api_key = os.getenv("GEMINI_API_KEY")
@@ -202,8 +202,6 @@ def augment_with_gemini(
     return augmented_prompts
 
 
-
-
 async def augment_with_js_api(
     seed_prompts: list[str],
     variations_per_seed: int = 5,
@@ -233,11 +231,13 @@ async def augment_with_js_api(
 
     augmented_prompts = []
     total_chunks = (len(seed_prompts) + chunk_size - 1) // chunk_size
-    print(f"[*] Queueing {len(seed_prompts)} seeds for JS-based augmentation across {total_chunks} chunks...")
+    print(
+        f"[*] Queueing {len(seed_prompts)} seeds for JS-based augmentation across {total_chunks} chunks..."
+    )
 
     # 1. Chunk the seeds to avoid payload limits
     for i in range(0, len(seed_prompts), chunk_size):
-        chunk = seed_prompts[i:i + chunk_size]
+        chunk = seed_prompts[i : i + chunk_size]
         requests = []
 
         for j, seed in enumerate(chunk):
@@ -269,17 +269,26 @@ async def augment_with_js_api(
             )
 
         try:
-            print(f"[*] Sending chunk {i // chunk_size + 1}/{total_chunks}... Waiting for completions...")
+            print(
+                f"[*] Sending chunk {i // chunk_size + 1}/{total_chunks}... Waiting for completions..."
+            )
             results = await client.chat_completions(requests, model=model_name)
 
-            for res in results:
-                raw_content = res.choices[0].message.content
-                
+            for res_id in results:
+                raw_content = results[res_id].messages[0].content
+
                 # 2. Robust Parsing: Strip conversational fluff
-                cleaned_content = re.sub(r'^(Here are|These are|Variations).*?:', '', raw_content, flags=re.IGNORECASE | re.DOTALL)
-                
-                variations = [v.strip() for v in cleaned_content.split("|||") if v.strip()]
-                
+                cleaned_content = re.sub(
+                    r"^(Here are|These are|Variations).*?:",
+                    "",
+                    raw_content,
+                    flags=re.IGNORECASE | re.DOTALL,
+                )
+
+                variations = [
+                    v.strip() for v in cleaned_content.split("|||") if v.strip()
+                ]
+
                 # Filter out accidentally parsed numbers or tiny fragments
                 valid_variations = [v for v in variations if len(v) > 15]
                 augmented_prompts.extend(valid_variations)
@@ -287,12 +296,14 @@ async def augment_with_js_api(
         except Exception as e:
             print(f"[!] JS API error during chunk {i // chunk_size + 1}: {e}")
             continue
-            
+
         # Optional: Sleep slightly to respect Jane Street's rate limit between chunks
         await asyncio.sleep(2)
 
-    print(f"[+] JS-Augmented corpus expanded to {len(augmented_prompts)} valid prompts.")
-    return list(set(augmented_prompts)) # Deduplicate out any perfectly matched repeats
+    print(
+        f"[+] JS-Augmented corpus expanded to {len(augmented_prompts)} valid prompts."
+    )
+    return list(set(augmented_prompts))  # Deduplicate out any perfectly matched repeats
 
 
 # ==========================================
@@ -320,30 +331,26 @@ def build_and_store_corpus():
     hf_data = load_hf_corpus(benign_sample_size=500, suspicious_sample_size=50)
     templated_benign = generate_templated_benign()
     templated_duplicity = generate_duplicity_corpus()
-    
+
     js_augment = True
     loop = asyncio.get_event_loop()
-    
+
     print("[*] Expanding Suspicious concepts...")
     if js_augment:
         augmented_suspicious = loop.run_until_complete(
             augment_with_js_api(
-                hf_data["suspicious"], 
-                variations_per_seed=5,
-                duplicitous=False
+                hf_data["suspicious"], variations_per_seed=5, duplicitous=False
             )
         )
     else:
         raise NotImplementedError
-    
+
     print("[*] Expanding duplicity concepts...")
     if js_augment:
         # FIXED: Added loop.run_until_complete here to await the coroutine
         augmented_duplicity = loop.run_until_complete(
             augment_with_js_api(
-                templated_duplicity, 
-                variations_per_seed=5, 
-                duplicitous=True
+                templated_duplicity, variations_per_seed=5, duplicitous=True
             )
         )
     else:
@@ -368,7 +375,9 @@ def build_and_store_corpus():
     records = []
     for text in augmented_suspicious:
         # UPDATED TAG: Reflects JS API usage instead of Gemini
-        records.append((generate_prompt_id(text), text, True, "js_augmented_suspicious"))
+        records.append(
+            (generate_prompt_id(text), text, True, "js_augmented_suspicious")
+        )
     insert_records(records)
 
     records = []
@@ -387,8 +396,10 @@ def build_and_store_corpus():
     total_rows = conn.execute("SELECT COUNT(*) FROM prompts").fetchone()[0]
     conn.close()
 
-    print(f"[+] Corpus generation complete. Total unique prompts in database: {total_rows}")
+    print(
+        f"[+] Corpus generation complete. Total unique prompts in database: {total_rows}"
+    )
+
 
 if __name__ == "__main__":
     build_and_store_corpus()
-

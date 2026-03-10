@@ -7,17 +7,31 @@
     "vscode": {
       "extensions": [
         "ms-python.python",
-        "ms-python.vscode-pylance",
+        "ms-python.debugpy",
+        "ms-python.black-formatter",
         "charliermarsh.ruff",
+        "mhutchie.git-graph",
+        "eamodio.gitlens",
+        "vscode-icons-team.vscode-icons",
+        "ms-python.isort",
+        "GitHub.vscode-pull-request-github",
+        "donjayamanne.githistory",
+        "google.geminicodeassist",
         "tamasfe.even-better-toml"
       ],
       "settings": {
-        "python.defaultInterpreterPath": "/opt/poetry/bin/python",
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
         "python.formatting.provider": "none",
         "editor.formatOnSave": true
       }
     }
   },
-  "postCreateCommand": "poetry install",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {
+      "version": "latest",
+      "ppa": "false"
+    }
+  },
+  "postCreateCommand": "git config --global --add safe.directory /app && poetry install",
   "remoteUser": "root"
 }

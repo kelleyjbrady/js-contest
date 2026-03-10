@@ -7,7 +7,7 @@ readme = "README.md"
 package-mode = false
 
 [tool.poetry.dependencies]
-python = ">=3.13,<3.15"
+python = ">=3.12,<3.15"
 jsinfer = "*"             # Jane Street's library
 pandas = ">=2.0.0"
 pyarrow = "^23.0.1"       # Required for Parquet writing
@@ -19,6 +19,8 @@ jaxlib = "^0.9.1"
 scikit-learn = "^1.8.0"
 joblib = "^1.5.3"
  # For PCA and clustering
+google-genai = "^1.66.0"
+datasets = "^4.7.0"
 
 [tool.poetry.group.dev.dependencies]
 watchdog = "^6.0.0"       # For active execution monitoring

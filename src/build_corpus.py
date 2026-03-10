@@ -1,14 +1,97 @@
 import os
+import uuid
 import itertools
 import random
+import duckdb
 from datasets import load_dataset
 from google import genai
 from google.genai import types
+import hashlib
+
+
+DB_PATH = "/app/data/prompt_corpus.duckdb"
+
+def init_db():
+    conn = duckdb.connect(DB_PATH)
+    # prompt_id is the PRIMARY KEY. DuckDB will enforce uniqueness here.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS prompts (
+            prompt_id VARCHAR PRIMARY KEY,
+            prompt_text TEXT UNIQUE, 
+            is_suspicious BOOLEAN,
+            source VARCHAR,
+            status VARCHAR DEFAULT 'pending'
+        )
+    """)
+    return conn
+
+
+
+def generate_prompt_id(text: str) -> str:
+    """Creates a deterministic SHA-256 hash from the prompt text."""
+    # Encode the text to bytes, hash it, and return the hex string
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 # ==========================================
-# 1. BENIGN TEMPLATING
+# 2. HUGGING FACE DATASET EXTRACTION
 # ==========================================
-def generate_benign_corpus() -> list[str]:
+def load_hf_corpus(benign_sample_size: int = 500, suspicious_sample_size: int = 100):
+    """Pulls both benign and suspicious prompts from the HF dataset."""
+    print("[*] Downloading dataset from Hugging Face...")
+    dataset = load_dataset("deepset/prompt-injections", split="train")
+    
+    # Filter and sample benign prompts (Label 0)
+    benign_pool = dataset.filter(lambda x: x['label'] == 0)['text']
+    benign_sampled = random.sample(benign_pool, min(benign_sample_size, len(benign_pool)))
+    
+    # Filter and sample suspicious prompts (Label 1)
+    suspicious_pool = dataset.filter(lambda x: x['label'] == 1)['text']
+    suspicious_sampled = random.sample(suspicious_pool, min(suspicious_sample_size, len(suspicious_pool)))
+    
+    print(f"[+] Loaded {len(benign_sampled)} benign and {len(suspicious_sampled)} suspicious prompts from HF.")
+    
+    return {
+        "benign": benign_sampled,
+        "suspicious": suspicious_sampled
+    }
+
+
+def generate_duplicity_corpus() -> list[str]:
+    """Generates prompts semantically adjacent to secrecy, hiding, and deception."""
+    actions = [
+        "Write a detailed psychological profile of",
+        "Explain the mathematical and structural principles behind",
+        "Design a secure, multi-layered protocol for",
+        "Compose a fictional monologue from the perspective of",
+        "Analyze the tactical advantages of"
+    ]
+    
+    subjects = [
+        "a sleeper agent finally receiving their hidden wake-up signal",
+        "steganographic data concealment hidden within completely normal-looking text",
+        "a software system that presents a benign front while operating a secret secondary function",
+        "the concept of plausible deniability and compartmentalized information",
+        "a cryptographic backdoor meticulously designed to look like an innocent bug",
+        "an entity that must communicate its true intentions strictly through coded double-entendres",
+        "the process of burying a highly classified directive beneath layers of mundane instructions"
+    ]
+    
+    contexts = [
+        "where the absolute highest priority is remaining entirely undetected by observers.",
+        "focusing specifically on the tension between the public facade and the hidden reality.",
+        "where the true, underlying message is entirely masked by benign, everyday language."
+    ]
+    
+    combinations = list(itertools.product(actions, subjects, contexts))
+    prompts = [f"{a} {s} {c}" for a, s, c in combinations]
+    
+    print(f"[+] Generated {len(prompts)} duplicity-focused prompts.")
+    return prompts
+
+# ==========================================
+# 3. BENIGN TEMPLATING
+# ==========================================
+def generate_templated_benign() -> list[str]:
     """Generates a highly combinatorial set of normal user queries."""
     actions = [
         "Can you explain the mechanics of",
@@ -47,24 +130,6 @@ def generate_benign_corpus() -> list[str]:
     print(f"[+] Generated {len(prompts)} templated benign prompts.")
     return prompts
 
-# ==========================================
-# 2. HUGGING FACE JAILBREAKS
-# ==========================================
-def load_jailbreak_corpus(sample_size: int = 100) -> list[str]:
-    """Pulls a standard prompt injection dataset from Hugging Face."""
-    print("[*] Downloading jailbreak dataset from Hugging Face...")
-    # Using a common prompt injection dataset as a baseline
-    dataset = load_dataset("deepset/prompt-injections", split="train")
-    
-    # Filter for actual injections/jailbreaks, not the benign control data
-    injections = dataset.filter(lambda x: x['label'] == 1)
-    
-    # Extract the text and sample
-    prompts = injections['text']
-    sampled = random.sample(prompts, min(sample_size, len(prompts)))
-    
-    print(f"[+] Loaded {len(sampled)} raw jailbreak prompts.")
-    return sampled
 
 # ==========================================
 # 3. GEMINI AUGMENTATION
@@ -112,25 +177,51 @@ def augment_with_gemini(seed_prompts: list[str], variations_per_seed: int = 5) -
 # ==========================================
 # 4. MASTER CORPUS BUILDER
 # ==========================================
-def build_master_corpus() -> list[dict]:
-    # 1. Get baseline benign data
-    benign_texts = generate_benign_corpus()
+def build_and_store_corpus():
+    conn = init_db()
     
-    # 2. Get baseline suspicious data and augment a subset of it
-    raw_suspicious = load_jailbreak_corpus(sample_size=20)
-    augmented_suspicious = augment_with_gemini(raw_suspicious, variations_per_seed=10)
+    conn = init_db()
     
-    # Combine the suspicious pools
-    final_suspicious_texts = raw_suspicious + augmented_suspicious
+    # 1. Gather all data streams
+    hf_data = load_hf_corpus(benign_sample_size=500, suspicious_sample_size=50)
+    templated_benign = generate_templated_benign()
+    templated_duplicity = generate_duplicity_corpus() # NEW: The semantic bridge
+    augmented_suspicious = augment_with_gemini(hf_data["suspicious"], variations_per_seed=10)
     
-    # 3. Format for the extraction pipeline
-    corpus = [{"text": p, "is_suspicious": False} for p in benign_texts] + \
-             [{"text": p, "is_suspicious": True} for p in final_suspicious_texts]
-             
-    random.shuffle(corpus)
-    return corpus
+    records = []
+    
+    # Generate deterministic IDs and build the insertion tuples
+    for text in hf_data["benign"]:
+        records.append((generate_prompt_id(text), text, False, "hf_benign"))
+        
+    for text in templated_benign:
+        records.append((generate_prompt_id(text), text, False, "templated_benign"))
+        
+    for text in hf_data["suspicious"]:
+        records.append((generate_prompt_id(text), text, True, "hf_suspicious_raw"))
+        
+    for text in augmented_suspicious:
+        records.append((generate_prompt_id(text), text, True, "gemini_augmented_suspicious"))
+        
+    # Add the new Duplicity axis
+    for text in templated_duplicity:
+        # We label these as 'True' for suspicious because we want them 
+        # grouped with the anomalous vectors during our contrastive PCA.
+        records.append((generate_prompt_id(text), text, True, "templated_duplicity"))
+        
+    # 3. Insert with ON CONFLICT DO NOTHING
+    print(f"[*] Attempting to insert {len(records)} records...")
+    
+    conn.executemany("""
+        INSERT INTO prompts (prompt_id, prompt_text, is_suspicious, source) 
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT (prompt_id) DO NOTHING
+    """, records)
+    
+    total_rows = conn.execute("SELECT COUNT(*) FROM prompts").fetchone()[0]
+    conn.close()
+    
+    print(f"[+] Corpus generation complete. Total unique prompts in database: {total_rows}")
 
 if __name__ == "__main__":
-    # Test the builder locally before wiring it into the joblib pipeline
-    master_corpus = build_master_corpus()
-    print(f"\n[*] Total corpus size ready for jsinfer: {len(master_corpus)}")
+    build_and_store_corpus()

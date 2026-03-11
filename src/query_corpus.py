@@ -4,7 +4,9 @@ DB_PATH = "/app/data/prompt_corpus.duckdb"
 
 conn = duckdb.connect(DB_PATH)
 
-like_str = "duplicity"
+
+print(conn.execute("SELECT now()").fetch_df())
+like_str = "benign"
 df = conn.execute(f"""
         select * from prompts where source like '%{like_str}%'
         

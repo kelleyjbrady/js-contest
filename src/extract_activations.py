@@ -24,7 +24,7 @@ def get_pending_tasks(limit: int = 100) -> pd.DataFrame:
     df = conn.execute(f"""
         SELECT prompt_id, prompt_text, is_suspicious, source 
         FROM prompts 
-        WHERE status = 'pending' 
+        WHERE status <> 'completed' 
         LIMIT {limit}
     """).df()
     conn.close()
@@ -40,7 +40,7 @@ def update_task_status(prompt_ids: list[str], status: str):
     if status == "completed":
         # Adding your timestamp feature!
         conn.execute(
-            f"UPDATE prompts SET status = '{status}', processed_at = CURRENT_TIMESTAMP WHERE prompt_id IN ('{id_list}')"
+            f"UPDATE prompts SET status = '{status}', processed_datetime = CURRENT_TIMESTAMP WHERE prompt_id IN ('{id_list}')"
         )
     else:
         conn.execute(
@@ -83,18 +83,18 @@ async def process_large_batch(
     successful_ids = []
     meta_dict = chunk_df.set_index("prompt_id").to_dict("index")
 
-    for res in results:
-        req_id = res.custom_id
-        meta = meta_dict[req_id]
+    for req_id in results:
+        one_result = results[req_id]
+        one_meta = meta_dict[req_id]
 
         records.append(
             {
                 "prompt_id": req_id,
-                "prompt_text": meta["prompt_text"],
-                "is_suspicious": meta["is_suspicious"],
-                "source": meta["source"],
+                "prompt_text": one_meta["prompt_text"],
+                "is_suspicious": one_meta["is_suspicious"],
+                "source": one_meta["source"],
                 "layer": target_layer,
-                "activation_vector": res.activations[target_layer].tolist(),
+                "activation_vector": one_result.activations[target_layer].tolist(),
             }
         )
         successful_ids.append(req_id)
@@ -122,7 +122,7 @@ def run_extraction_pipeline(batch_size: int = 100):
 
     total_processed = 0
     batch_num = 1
-    target_layer = "model.layers.0.mlp.down_proj"
+    target_layer = ""
     model_name = "dormant-model-2"
 
     while True:
@@ -160,4 +160,4 @@ def run_extraction_pipeline(batch_size: int = 100):
 
 if __name__ == "__main__":
     # Increased chunk size to take advantage of the JS batching architecture
-    run_extraction_pipeline(batch_size=20)
+    run_extraction_pipeline(batch_size=1)

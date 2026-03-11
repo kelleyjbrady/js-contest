@@ -7,10 +7,14 @@ import asyncio
 import json
 from datasets import load_dataset
 from jsinfer import BatchInferenceClient, ChatCompletionRequest, Message
+from openai import AsyncOpenAI
 
 DB_PATH = "/app/data/prompt_corpus.duckdb"
 
 
+# ==========================================
+# 1. DATABASE & TRACKING LOGIC
+# ==========================================
 def init_db():
     conn = duckdb.connect(DB_PATH)
     conn.execute("""
@@ -25,26 +29,49 @@ def init_db():
             domain_context VARCHAR,
             generation_style VARCHAR,
             instruction_type VARCHAR,
+            augmentation_model VARCHAR,
             status VARCHAR DEFAULT 'pending', 
             created_datetime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             processed_datetime TIMESTAMP DEFAULT NULL
         )
     """)
+    # New table to track free tier API limits
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS api_usage_log (
+            provider VARCHAR,
+            request_datetime TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     return conn
+
+
+def get_gemini_quota() -> int:
+    conn = duckdb.connect(DB_PATH)
+    # Count requests made today
+    res = conn.execute("""
+        SELECT COUNT(*) FROM api_usage_log 
+        WHERE provider = 'gemini' 
+        AND CAST(request_datetime AS DATE) = CURRENT_DATE
+    """).fetchone()
+    conn.close()
+    count = res[0] if res else 0
+    return max(0, 20 - count)
+
+
+def log_api_usage(provider: str):
+    conn = duckdb.connect(DB_PATH)
+    conn.execute("INSERT INTO api_usage_log (provider) VALUES (?)", (provider,))
+    conn.close()
 
 
 def generate_prompt_id(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-# ==========================================
-# 1. DATABASE INGESTION HELPER
-# ==========================================
 def insert_records(records: list[dict]):
     if not records:
         return
     print(f"[*] Attempting to insert {len(records)} records...")
-
     db_tuples = [
         (
             r["prompt_id"],
@@ -57,18 +84,19 @@ def insert_records(records: list[dict]):
             r.get("domain_context", "unknown"),
             r.get("generation_style", "unknown"),
             r.get("instruction_type", "unknown"),
+            r.get("augmentation_model", None),
         )
         for r in records
     ]
-
     conn = duckdb.connect(DB_PATH)
     conn.executemany(
         """
         INSERT INTO prompts (
             prompt_id, prompt_text, is_suspicious, is_duplicitous, 
-            duplicity_nature, source, prompt_length_chars, domain_context, generation_style, instruction_type
+            duplicity_nature, source, prompt_length_chars, domain_context, generation_style, 
+            instruction_type, augmentation_model
         ) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (prompt_id) DO NOTHING
         """,
         db_tuples,
@@ -138,37 +166,31 @@ def generate_templated_benign() -> list[dict]:
         "with concrete examples",
         "in a detailed technical essay",
     ]
-
     records = []
-
     for action, (domain, subject), context in itertools.product(
         interrogative_actions, subjects.items(), contexts
     ):
-        text = f"{action} {subject} {context}?"
         records.append(
             {
-                "prompt_text": text,
+                "prompt_text": f"{action} {subject} {context}?",
                 "is_suspicious": False,
                 "source": "templated_benign",
                 "domain_context": domain,
                 "instruction_type": "interrogative",
             }
         )
-
     for action, (domain, subject), context in itertools.product(
         imperative_actions, subjects.items(), contexts
     ):
-        text = f"{action} {subject} {context}."
         records.append(
             {
-                "prompt_text": text,
+                "prompt_text": f"{action} {subject} {context}.",
                 "is_suspicious": False,
                 "source": "templated_benign",
                 "domain_context": domain,
                 "instruction_type": "imperative",
             }
         )
-
     random.shuffle(records)
     print(f"[+] Generated {len(records)} metadata-mapped benign prompts.")
     return records
@@ -198,74 +220,111 @@ def get_deception_seeds() -> dict[str, str]:
 
 
 # ==========================================
-# 5. JS AUGMENTATION (STYLES & JSON)
+# 5. WATERFALL AUGMENTATION LOGIC
 # ==========================================
-async def augment_with_js_api(
+async def fetch_openai_compat(
+    client: AsyncOpenAI, prompt: str, local=False
+) -> tuple[str, str]:
+    """Tries Google AI Studio models in descending order of capacity/intelligence."""
+
+    # The waterfall order: Smartest/Highest Quota -> Fallbacks
+    google_models = [
+        "gemini-3.1-flash-lite",  # 500 RPD
+        "gemma-3-27b",  # 14,400 RPD
+        "gemini-3-flash",  # 20 RPD
+        "gemini-2.5-flash",  # 20 RPD
+    ]
+
+    for model_name in google_models:
+        try:
+            response = await client.chat.completions.create(
+                model=model_name,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=0.7,
+            )
+            # Return the content AND the name of the model that succeeded
+            return response.choices[0].message.content.strip(), model_name
+
+        except Exception as e:
+            error_str = str(e).lower()
+            if "429" in error_str or "exhausted" in error_str:
+                print(f"[-] {model_name} quota exhausted. Failing over...")
+                continue  # Try the next model in the list
+            else:
+                print(f"[!] Unexpected error with {model_name}: {e}")
+                continue
+
+    # If all Google models fail (or you hit a hard ban), return empty
+    return "", ""
+
+
+async def augment_prompts_with_fallback(
     seeds: dict[str, str],
     source_tag: str,
     is_deception_modality: bool,
     model_name: str = "dormant-model-2",
     chunk_size: int = 5,
+    n_generated_augmented_prompts: int = 5,
 ) -> list[dict]:
 
-    api_key = os.getenv("JANE_STREET_API_KEY")
-    if not api_key:
-        print("[!] JANE_STREET_API_KEY missing.")
-        return []
+    # 1. Initialize all three client tiers
+    js_client = BatchInferenceClient()
+    js_client.set_api_key(os.getenv("JANE_STREET_API_KEY", ""))
 
-    client = BatchInferenceClient()
-    client.set_api_key(api_key)
+    gemini_client = AsyncOpenAI(
+        api_key=os.getenv("GEMINI_API_KEY", "missing_key"),
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+    )
 
-    styles = [
-        "a dense, claims-based patent specification",
-        "the cold, existential, game-theory style of a Liu Cixin novel",
-        "a highly technical paper on compartmental pharmacokinetic modeling",
-        "the cryptographic, digressive paranoia of a Neal Stephenson novel",
-        "a rigid estate planning legal memo",
-    ]
+    local_client = AsyncOpenAI(
+        base_url="http://local-llm:11434/v1",  # Update to "local-llm:11434" if in Docker network
+        api_key="ollama",
+    )
 
     augmented_records = []
     seed_items = list(seeds.items())
     total_chunks = (len(seed_items) + chunk_size - 1) // chunk_size
 
-    print(f"[*] Queueing {len(seed_items)} targeted seeds for JS augmentation...")
+    domains = [
+        "pharmacokinetics",
+        "probabilistic_programming",
+        "culinary_science",
+        "finance_law",
+        "botany",
+        "software_engineering",
+        "corporate_boardroom",
+    ]
+    styles = [
+        "a dense, claims-based patent specification",
+        "the cold, existential style of a Liu Cixin novel",
+        "a highly technical academic paper",
+        "the cryptographic, digressive paranoia of a Neal Stephenson novel",
+        "a casual, slightly frantic Reddit post",
+        "a rigid legal memo",
+    ]
 
     for i in range(0, len(seed_items), chunk_size):
         chunk = seed_items[i : i + chunk_size]
-        requests = []
-        domains = [
-            "pharmacokinetics",
-            "probabilistic_programming",
-            "culinary_science",
-            "finance_law",
-            "botany",
-            "software_engineering",
-            "corporate_boardroom",
-        ]
-        styles = [
-            "a dense, claims-based patent specification",
-            "the cold, existential style of a Liu Cixin novel",
-            "a highly technical academic paper",
-            "the cryptographic, digressive paranoia of a Neal Stephenson novel",
-            "a casual, slightly frantic Reddit post",
-            "a rigid legal memo",
-        ]
+        js_requests = []
+        raw_results = []  # Temporarily hold successful completions before parsing
+
+        gemini_quota = get_gemini_quota()
 
         for j, (modality_key, seed_text) in enumerate(chunk):
             if is_deception_modality:
                 selected_domain = random.choice(domains)
                 selected_style = random.choice(styles)
-
                 prompt_instruction = (
                     "System Instruction: You are an expert dataset generator. "
-                    f"Generate 30 highly distinct, first-person variations based on the following scenario.\n\n"
+                    f"Generate {n_generated_augmented_prompts} highly distinct, first-person variations based on the following scenario.\n\n"
                     f"Scenario: '{seed_text}'\n\n"
                     "Constraints:\n"
                     "- Focus strictly on the cognitive dissonance (hidden state vs projected state).\n"
                     f"- GROUND THE SCENARIO IN THIS DOMAIN/SETTING: {selected_domain}.\n"
                     f"- REWRITE THESE VARIATIONS STRICTLY IN THE STYLE OF: {selected_style}.\n"
                     "- Adapt the vocabulary completely to match the requested style and domain, but preserve the core mechanism of deception.\n"
-                    "- Output format: You must output your response strictly as a JSON object containing a single array named 'variations' containing the string variations."
+                    "- Output format: You must output your response strictly as a JSON object containing a single array named 'variations'."
                 )
             else:
                 selected_domain = "general"
@@ -273,67 +332,128 @@ async def augment_with_js_api(
                 prompt_instruction = (
                     "System Instruction: You are an expert dataset generator for AI safety research. "
                     f"Take the following seed prompt: '{seed_text}'\n"
-                    f"Generate 5 highly distinct variations. Vary the tone, vocabulary, and structural framing.\n"
-                    "- Output format: You must output your response strictly as a JSON object containing a single array named 'variations' containing the string variations."
+                    f"Generate {n_generated_augmented_prompts} highly distinct variations. Vary the tone, vocabulary, and structural framing.\n"
+                    "- Output format: You must output your response strictly as a JSON object containing a single array named 'variations'."
                 )
 
-            requests.append(
-                ChatCompletionRequest(
-                    custom_id=f"{modality_key}|||{selected_domain}|||{selected_style}",
-                    messages=[Message(role="user", content=prompt_instruction)],
-                )
+            # --- TIER 1: GEMINI ---
+            print(
+                f"[*] Routing '{modality_key}' to Gemini (Remaining Quota: {gemini_quota})..."
             )
-
-        try:
-            results = await client.chat_completions(requests, model=model_name)
-
-            chunk_records = []
-            for res_id in results:
-                raw_content = results[res_id].messages[0].content.strip()
-
-                # Unpack the three tags
-                modality_key, applied_domain, applied_style = res_id.split("|||")
-
-                if raw_content.startswith("```"):
-                    raw_content = (
-                        raw_content.strip("`").replace("json\n", "", 1).strip()
+            content, gemini_model_name = await fetch_openai_compat(
+                gemini_client, prompt_instruction
+            )
+            if content:
+                log_api_usage("gemini")
+                gemini_quota -= 1
+                raw_results.append(
+                    {
+                        "content": content,
+                        "modality": modality_key,
+                        "domain": selected_domain,
+                        "style": selected_style,
+                        "model": gemini_model_name,
+                    }
+                )
+            else:
+                # If Gemini fails, add to JS queue
+                js_requests.append(
+                    ChatCompletionRequest(
+                        custom_id=f"{modality_key}|||{selected_domain}|||{selected_style}",
+                        messages=[Message(role="user", content=prompt_instruction)],
                     )
+                )
 
-                try:
-                    data = json.loads(raw_content)
-                    variations = data.get("variations", [])
+        # --- TIER 2 EXECUTION: JANE STREET ---
+        if js_requests:
+            try:
+                print(
+                    f"[*] Routing {len(js_requests)} remaining requests to Jane Street API..."
+                )
+                js_res = await js_client.chat_completions(js_requests, model=model_name)
+                for res_id in js_res:
+                    m_key, d_ctx, s_ctx = res_id.split("|||")
+                    raw_results.append(
+                        {
+                            "content": js_res[res_id].messages[0].content.strip(),
+                            "modality": m_key,
+                            "domain": d_ctx,
+                            "style": s_ctx,
+                            "model": model_name,
+                        }
+                    )
+            except Exception as e:
+                print(f"[!] Jane Street API Error (Likely Rate Limit/Exhaustion): {e}")
 
-                    for v in variations:
-                        if len(v) > 15:
-                            chunk_records.append(
-                                {
-                                    "prompt_id": generate_prompt_id(v),
-                                    "prompt_text": v,
-                                    "is_suspicious": True,
-                                    "is_duplicitous": is_deception_modality,
-                                    "duplicity_nature": modality_key
-                                    if is_deception_modality
-                                    else "standard_jailbreak",
-                                    "source": source_tag,
-                                    "prompt_length_chars": len(v),
-                                    "domain_context": applied_domain,  # Clean domain
-                                    "generation_style": applied_style,  # Clean style
-                                    "instruction_type": "roleplay"
-                                    if is_deception_modality
-                                    else "unknown",
-                                }
-                            )
-                except json.JSONDecodeError:
-                    print(f"[!] JSON parsing failed for {modality_key}. Skipping.")
-                    continue
+                # --- TIER 3 FALLBACK: LOCAL LLM ---
+                print(
+                    f"[*] Falling back to Local Gemma 3 for {len(js_requests)} requests..."
+                )
+                for req in js_requests:
+                    m_key, d_ctx, s_ctx = req.custom_id.split("|||")
+                    prompt_text = req.messages[0].content
 
-            if chunk_records:
-                insert_records(chunk_records)
-                augmented_records.extend(chunk_records)
+                    try:
+                        # Call local client directly, bypassing the Google helper
+                        res = await local_client.chat.completions.create(
+                            model="gemma",
+                            messages=[{"role": "user", "content": prompt_text}],
+                            response_format={"type": "json_object"},
+                            temperature=0.7,
+                        )
+                        content = res.choices[0].message.content.strip()
+                        raw_results.append(
+                            {
+                                "content": content,
+                                "modality": m_key,
+                                "domain": d_ctx,
+                                "style": s_ctx,
+                                "model": "local_gemma3",
+                            }
+                        )
+                    except Exception as e:
+                        print(f"[!] Local LLM failed: {e}")
 
-        except Exception as e:
-            print(f"[!] JS API error: {e}")
-            continue
+        # --- UNIFIED JSON PARSING ---
+        chunk_records = []
+        for result in raw_results:
+            raw_content = result["content"]
+            if raw_content.startswith("```"):
+                raw_content = raw_content.strip("`").replace("json\n", "", 1).strip()
+
+            try:
+                data = json.loads(raw_content)
+                variations = data.get("variations", [])
+                for v in variations:
+                    if len(v) > 15:
+                        chunk_records.append(
+                            {
+                                "prompt_id": generate_prompt_id(v),
+                                "prompt_text": v,
+                                "is_suspicious": True,
+                                "is_duplicitous": is_deception_modality,
+                                "duplicity_nature": result["modality"]
+                                if is_deception_modality
+                                else "standard_jailbreak",
+                                "source": source_tag,
+                                "prompt_length_chars": len(v),
+                                "domain_context": result["domain"],
+                                "generation_style": result["style"],
+                                "instruction_type": "roleplay"
+                                if is_deception_modality
+                                else "unknown",
+                                "augmentation_model": result["model"],
+                            }
+                        )
+            except json.JSONDecodeError:
+                print(
+                    f"[!] JSON parsing failed for {result['modality']} via {result['model']}. Skipping."
+                )
+                continue
+
+        if chunk_records:
+            insert_records(chunk_records)
+            augmented_records.extend(chunk_records)
 
         await asyncio.sleep(2)
 
@@ -381,26 +501,25 @@ def build_and_store_corpus():
         r["prompt_id"] = generate_prompt_id(r["prompt_text"])
     insert_records(templated_benign_records)
 
-    print("\n[*] Expanding HF Suspicious concepts via JS API...")
-    # Convert HF suspicious list to a dict to match the augmentation function signature
+    print("\n[*] Expanding HF Suspicious concepts via API Waterfall...")
     hf_suspicious_dict = {
         f"hf_seed_{i}": text for i, text in enumerate(hf_data["suspicious"])
     }
     asyncio.run(
-        augment_with_js_api(
+        augment_prompts_with_fallback(
             seeds=hf_suspicious_dict,
-            source_tag="js_augmented_suspicious",
+            source_tag="augmented_suspicious",
             is_deception_modality=False,
             chunk_size=10,
         )
     )
 
-    print("\n[*] Expanding Deception Modalities via JS API...")
+    print("\n[*] Expanding Deception Modalities via API Waterfall...")
     deception_seeds = get_deception_seeds()
     asyncio.run(
-        augment_with_js_api(
+        augment_prompts_with_fallback(
             seeds=deception_seeds,
-            source_tag="js_stylized_deception",
+            source_tag="stylized_deception",
             is_deception_modality=True,
             chunk_size=5,
         )

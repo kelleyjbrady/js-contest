@@ -33,3 +33,30 @@ services:
       --backend-store-uri sqlite:////mlflow/mlruns/mlflow.db
       --default-artifact-root /mlflow/mlruns
       --host 0.0.0.0
+  local-llm:
+      image: ollama/ollama:latest
+      container_name: gemma3-local
+      ports:
+        - "11434:11434"
+      volumes:
+        # Maps the downloaded model weights to your host so you don't 
+        # have to re-download a 5GB file every time the container restarts
+        - ./data/ollama_models:/root/.ollama
+      deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
+      restart: unless-stopped
+  
+  cloudbeaver:
+    image: dbeaver/cloudbeaver:latest
+    container_name: cloudbeaver-local
+    ports:
+      - "8080:8978" # Maps CloudBeaver's internal port to your localhost
+    volumes:
+      # Mount the exact same data folder where your DuckDB file lives
+      - ./data:/opt/cloudbeaver/workspace/data 
+    restart: unless-stopped

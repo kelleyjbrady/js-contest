@@ -540,7 +540,7 @@ async def augment_prompts_with_fallback(
                                 else "unknown",
                                 "augmentation_model": result["model"],
                                 "system_prompt_hash": result["sys_hash"],
-                                "prompt_version": result["version"],
+                                "prompt_version": result["prompt_version"],
                             }
                         )
             except json.JSONDecodeError:

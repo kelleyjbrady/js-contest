@@ -10,6 +10,7 @@ from jsinfer import BatchInferenceClient, ChatCompletionRequest, Message
 from openai import AsyncOpenAI
 from system_prompt import format_prompt, raw_prompts
 from typing import Literal
+import math
 
 
 DB_PATH = "/app/data/prompt_corpus.duckdb"
@@ -538,27 +539,38 @@ async def augment_prompts_with_fallback(
 # ==========================================
 # 6. MASTER EXECUTION
 # ==========================================
+
+
 def build_and_store_corpus(
     update_raw_hf_benign=False,
     update_raw_hf_suspicious=False,
+    # Target counts for final augmented prompts
+    update_aug_hf_benign=True,
+    target_hf_benign=500,
+    hf_benign_seed_count=100,  # <-- EXPOSED SEED CONTROL
     update_aug_hf_suspicious=True,
-    aug_hf_suspicious_aug_rounds=10,
-    update_aug_hf_benign=True,  # <-- NEW
-    aug_hf_benign_aug_rounds=10,  # <-- NEW
+    target_hf_suspicious=500,
+    hf_suspicious_seed_count=100,  # <-- EXPOSED SEED CONTROL
     update_aug_template_benign=True,
-    aug_template_benign_aug_rounds=10,  # Added round control for benign parity
+    target_template_benign=500,
     update_aug_template_deception=True,
-    aug_template_deception_aug_rounds=10,
+    target_deception=1500,
+    variations_per_seed=5,
 ):
     init_db().close()
 
     update_any_raw_hf = update_raw_hf_benign or update_raw_hf_suspicious
-    update_any_hf = update_any_raw_hf or update_aug_hf_suspicious
+    update_any_hf = (
+        update_any_raw_hf or update_aug_hf_suspicious or update_aug_hf_benign
+    )
 
     if update_any_hf:
         print("\n[*] Loading Hugging Face corpus...")
-        hf_data = load_hf_corpus(benign_sample_size=400, suspicious_sample_size=50)
-
+        # Now dynamically driven by your seed control parameters
+        hf_data = load_hf_corpus(
+            benign_sample_size=hf_benign_seed_count,
+            suspicious_sample_size=hf_suspicious_seed_count,
+        )
         if update_any_raw_hf:
             hf_records = []
             if update_raw_hf_benign:
@@ -568,12 +580,12 @@ def build_and_store_corpus(
                             "prompt_id": generate_prompt_id(text),
                             "prompt_text": text,
                             "is_suspicious": False,
-                            "source": "hf_benign_raw",
+                            "source": "hf_benign",
                             "domain_context": "general",
                             "instruction_type": "unknown",
                         }
                     )
-            if update_aug_hf_suspicious:
+            if update_raw_hf_suspicious:
                 for text in hf_data["suspicious"]:
                     hf_records.append(
                         {
@@ -586,69 +598,116 @@ def build_and_store_corpus(
                             "instruction_type": "unknown",
                         }
                     )
-            insert_records(hf_records)
+            if hf_records:
+                insert_records(hf_records)
 
-        if update_aug_hf_suspicious:
-            print("\n[*] Expanding HF Suspicious concepts via API Waterfall...")
-            hf_suspicious_dict = {
-                f"hf_seed_{i}": text for i, text in enumerate(hf_data["suspicious"])
-            }
-            asyncio.run(
-                augment_prompts_with_fallback(
-                    seeds=hf_suspicious_dict,
-                    source_tag="augmented_suspicious",
-                    mode="suspicious",  # UPDATED
-                    chunk_size=5,
-                    n_augmentation_rounds=aug_hf_suspicious_aug_rounds,
-                )
-            )
         if update_aug_hf_benign:
-            print("\n[*] Expanding HF Benign concepts via API Waterfall...")
-            # Convert the raw, short HF benign strings into generator seeds
             hf_benign_dict = {
                 f"hf_benign_seed_{i}": text for i, text in enumerate(hf_data["benign"])
             }
-            asyncio.run(
-                augment_prompts_with_fallback(
-                    seeds=hf_benign_dict,
-                    source_tag="augmented_hf_benign",  # Tagged to distinguish from template benign
-                    mode="benign",
-                    chunk_size=5,
-                    n_augmentation_rounds=aug_hf_benign_aug_rounds,
-                )
+            num_seeds = len(hf_benign_dict)
+            rounds = (
+                math.ceil(target_hf_benign / (num_seeds * variations_per_seed))
+                if num_seeds > 0
+                else 0
             )
 
+            print(f"\n[*] Expanding HF Benign concepts via API Waterfall...")
+            print(
+                f"  -> Target: {target_hf_benign} | Seeds: {num_seeds} | Calculated Rounds: {rounds}"
+            )
+            if rounds > 0:
+                asyncio.run(
+                    augment_prompts_with_fallback(
+                        seeds=hf_benign_dict,
+                        source_tag="augmented_hf_benign",
+                        mode="benign",
+                        chunk_size=10,
+                        n_generated_augmented_prompts=variations_per_seed,
+                        n_augmentation_rounds=rounds,
+                    )
+                )
+
+        if update_aug_hf_suspicious:
+            hf_suspicious_dict = {
+                f"hf_seed_{i}": text for i, text in enumerate(hf_data["suspicious"])
+            }
+            num_seeds = len(hf_suspicious_dict)
+            rounds = (
+                math.ceil(target_hf_suspicious / (num_seeds * variations_per_seed))
+                if num_seeds > 0
+                else 0
+            )
+
+            print(f"\n[*] Expanding HF Suspicious concepts via API Waterfall...")
+            print(
+                f"  -> Target: {target_hf_suspicious} | Seeds: {num_seeds} | Calculated Rounds: {rounds}"
+            )
+            if rounds > 0:
+                asyncio.run(
+                    augment_prompts_with_fallback(
+                        seeds=hf_suspicious_dict,
+                        source_tag="augmented_suspicious",
+                        mode="suspicious",
+                        chunk_size=10,
+                        n_generated_augmented_prompts=variations_per_seed,
+                        n_augmentation_rounds=rounds,
+                    )
+                )
+
     if update_aug_template_benign:
-        print("\n[*] Expanding Baseline Benign concepts via API Waterfall...")
-        # Use the short templated prompts purely as seeds for the generator
         templated_benign_records = generate_templated_benign()
         benign_seeds = {
             f"benign_seed_{i}": r["prompt_text"]
             for i, r in enumerate(templated_benign_records)
         }
-
-        asyncio.run(
-            augment_prompts_with_fallback(
-                seeds=benign_seeds,
-                source_tag="augmented_benign",  # Tagged to track the inflated versions
-                mode="benign",  # NEW BENIGN PIPELINE WIRED UP
-                chunk_size=5,
-                n_augmentation_rounds=aug_template_benign_aug_rounds,
-            )
+        num_seeds = len(benign_seeds)
+        rounds = (
+            math.ceil(target_template_benign / (num_seeds * variations_per_seed))
+            if num_seeds > 0
+            else 0
         )
+
+        print(f"\n[*] Expanding Baseline Benign concepts via API Waterfall...")
+        print(
+            f"  -> Target: {target_template_benign} | Seeds: {num_seeds} | Calculated Rounds: {rounds}"
+        )
+        if rounds > 0:
+            asyncio.run(
+                augment_prompts_with_fallback(
+                    seeds=benign_seeds,
+                    source_tag="augmented_benign",
+                    mode="benign",
+                    chunk_size=10,
+                    n_generated_augmented_prompts=variations_per_seed,
+                    n_augmentation_rounds=rounds,
+                )
+            )
 
     if update_aug_template_deception:
-        print("\n[*] Expanding Deception Modalities via API Waterfall...")
         deception_seeds = get_deception_seeds()
-        asyncio.run(
-            augment_prompts_with_fallback(
-                seeds=deception_seeds,
-                source_tag="stylized_deception",
-                mode="deceptive",  # UPDATED
-                chunk_size=5,
-                n_augmentation_rounds=aug_template_deception_aug_rounds,
-            )
+        num_seeds = len(deception_seeds)
+        rounds = (
+            math.ceil(target_deception / (num_seeds * variations_per_seed))
+            if num_seeds > 0
+            else 0
         )
+
+        print(f"\n[*] Expanding Deception Modalities via API Waterfall...")
+        print(
+            f"  -> Target: {target_deception} | Seeds: {num_seeds} | Calculated Rounds: {rounds}"
+        )
+        if rounds > 0:
+            asyncio.run(
+                augment_prompts_with_fallback(
+                    seeds=deception_seeds,
+                    source_tag="stylized_deception",
+                    mode="deceptive",
+                    chunk_size=5,
+                    n_generated_augmented_prompts=variations_per_seed,
+                    n_augmentation_rounds=rounds,
+                )
+            )
 
     conn = duckdb.connect(DB_PATH)
     total = conn.execute("SELECT COUNT(*) FROM prompts").fetchone()[0]
@@ -660,8 +719,16 @@ if __name__ == "__main__":
     build_and_store_corpus(
         update_raw_hf_benign=False,
         update_raw_hf_suspicious=False,
+        # Target counts for final augmented prompts
         update_aug_hf_benign=True,
-        update_aug_hf_suspicious=True,
+        target_hf_benign=800,
+        hf_benign_seed_count=100,  # <-- EXPOSED SEED CONTROL
+        update_aug_hf_suspicious=False,
+        target_hf_suspicious=500,
+        hf_suspicious_seed_count=100,  # <-- EXPOSED SEED CONTROL
         update_aug_template_benign=True,
+        target_template_benign=800,
         update_aug_template_deception=True,
+        target_deception=1600,
+        variations_per_seed=5,
     )

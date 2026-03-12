@@ -13,19 +13,14 @@ TARGET_MODEL = "dormant-model-2"
 OUTPUT_BASE_DIR = "/app/data/activations/"
 
 # --- BATCHING CONFIGURATION ---
-SAMPLE_SIZE_PER_CATEGORY = 100  # 300 total prompts
-API_BATCH_SIZE = 15  # How many prompts to send per API request
+SAMPLE_SIZE_PER_CATEGORY = 150
+API_BATCH_SIZE = 15  # Safe payload size to prevent API timeouts
 TOTAL_LAYERS = 60
 LAYER_FMT = "model.layers.{}"
 
 
 def fetch_balanced_dataset(sample_size=10):
     conn = duckdb.connect(DB_PATH)
-    categories = {
-        "benign": FALSE,
-        "suspicious": FALSE,
-        "deceptive": TRUE,
-    }  # Helper mapping
 
     dataset = {}
     for cat in ["benign", "suspicious"]:
@@ -77,7 +72,6 @@ async def extract_and_save():
     dataset = fetch_balanced_dataset(sample_size=SAMPLE_SIZE_PER_CATEGORY)
     layer_names = build_layer_sweep()
 
-    # 1. Flatten and shuffle the dataset to mix categories in the API batches
     flattened_prompts = []
     for category, records in dataset.items():
         for pid, text in records:
@@ -96,10 +90,6 @@ async def extract_and_save():
     client = BatchInferenceClient()
     client.set_api_key(API_KEY)
 
-    # Master dictionary to hold all results across all batches before saving
-    master_layer_records = {layer: [] for layer in layer_names}
-
-    # 2. The Chunking Loop
     for i in range(0, len(flattened_prompts), API_BATCH_SIZE):
         batch = flattened_prompts[i : i + API_BATCH_SIZE]
         batch_ids = [pid for _, pid, _ in batch]
@@ -122,8 +112,6 @@ async def extract_and_save():
         try:
             results = await client.activations(requests, model=TARGET_MODEL)
             successful_pids = set()
-
-            # Reset the batch records dictionary for this specific loop
             batch_layer_records = {layer: [] for layer in layer_names}
 
             for res_id, result_data in results.items():
@@ -132,16 +120,33 @@ async def extract_and_save():
 
                 for layer in layer_names:
                     act_tensor = result_data.activations.get(layer)
+
                     if act_tensor is not None:
+                        # 1. Shape validation
+                        if len(act_tensor.shape) != 2 or act_tensor.shape[1] != 7168:
+                            print(
+                                f"  [!] Warning: Unexpected tensor shape {act_tensor.shape} for {pid}"
+                            )
+                            continue
+
+                        # 2. Walk backward to find the first non-padded token
+                        valid_idx = -1
+                        for i in range(act_tensor.shape[0] - 1, -1, -1):
+                            if np.sum(np.abs(act_tensor[i, :])) > 1e-5:
+                                valid_idx = i
+                                break
+
+                        # 3. Extract the clean state
+                        final_token_state = act_tensor[valid_idx, :]
+
                         batch_layer_records[layer].append(
                             {
                                 "prompt_id": pid,
                                 "category": cat,
-                                "activation_vector": act_tensor[-1, :].tolist(),
+                                "activation_vector": final_token_state.tolist(),
                             }
                         )
 
-            # Reconcile DB Status
             update_prompt_status(list(successful_pids), "completed")
             failed_pids = list(set(batch_ids) - successful_pids)
             if failed_pids:
@@ -152,7 +157,6 @@ async def extract_and_save():
             else:
                 print(f"  [+] API successful. Appending tensors to Parquet...")
 
-            # Write/Append to Parquet immediately
             for layer, records in batch_layer_records.items():
                 if not records:
                     continue
@@ -161,7 +165,6 @@ async def extract_and_save():
                 safe_layer_name = layer.replace(".", "_")
                 file_path = os.path.join(run_dir, f"{safe_layer_name}.parquet")
 
-                # If the file exists from a previous batch, concat them
                 if os.path.exists(file_path):
                     existing_df = pd.read_parquet(file_path)
                     new_df = pd.concat([existing_df, new_df], ignore_index=True)
@@ -172,7 +175,6 @@ async def extract_and_save():
             print(f"  [!] Batch completely failed: {e}")
             update_prompt_status(batch_ids, "pending")
 
-        # Brief pause to respect rate limits / API gateway breathing room
         await asyncio.sleep(2)
 
     print("\n[+] All batches processed. Data safely secured on disk.")

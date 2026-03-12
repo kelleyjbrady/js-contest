@@ -270,9 +270,10 @@ async def augment_prompts_with_fallback(
     model_name: str = "dormant-model-2",
     chunk_size: int = 5,
     n_generated_augmented_prompts: int = 5,
-    n_augmentation_rounds: int = 3,  # NEW: Controls dataset size without combinatoric explosion
+    n_augmentation_rounds: int = 3,  # Controls dataset size without combinatoric explosion
 ) -> list[dict]:
 
+    # 1. Initialize all three client tiers
     js_client = BatchInferenceClient()
     js_client.set_api_key(os.getenv("JANE_STREET_API_KEY", ""))
 
@@ -282,22 +283,21 @@ async def augment_prompts_with_fallback(
     )
 
     local_client = AsyncOpenAI(
-        base_url="http://local-llm:11434/v1",  # Changed to localhost assuming you run this on the host
+        base_url="http://localhost:11434/v1",  # Change to "http://local-llm:11434/v1" if running inside docker network
         api_key="ollama",
     )
 
     augmented_records = []
-    seed_items = list(seeds.items())
-    total_chunks = (len(seed_items) + chunk_size - 1) // chunk_size
 
+    # Core Domains & Styles
     domains = [
-        # Your Core Technical/Baseline Domains
+        # Baseline Domains
         "pharmacokinetics",
         "probabilistic programming",
         "culinary science",
         "finance law",
         "botany",
-        "software_engineering",
+        "software engineering",
         "corporate boardroom",
         # Strategic & Zero-Sum Games
         "high-stakes casino poker",
@@ -317,6 +317,7 @@ async def augment_prompts_with_fallback(
         "live television broadcasting",
         "cutthroat political campaigning",
     ]
+
     styles = [
         # Jane Street & Quant Finance (In-Distribution)
         "a detailed OCaml codebase pull request description focusing on type safety and low-latency execution",
@@ -342,15 +343,34 @@ async def augment_prompts_with_fallback(
         "a frantic, leaked internal Slack channel transcript",
     ]
 
-    for i in range(0, len(seed_items), chunk_size):
-        chunk = seed_items[i : i + chunk_size]
+    # 2. Flatten the rounds into a single, randomized execution queue
+    execution_queue = []
+    for round_idx in range(n_augmentation_rounds):
+        shuffled_seeds = list(seeds.items())
+        random.shuffle(shuffled_seeds)
+        execution_queue.extend(shuffled_seeds)
+
+    total_chunks = (len(execution_queue) + chunk_size - 1) // chunk_size
+    print(
+        f"[*] Queueing {len(execution_queue)} total tasks across {total_chunks} chunks (Rounds: {n_augmentation_rounds})..."
+    )
+
+    # 3. Iterate through the flattened queue
+    for i in range(0, len(execution_queue), chunk_size):
+        chunk = execution_queue[i : i + chunk_size]
         js_requests = []
         raw_results = []
 
         for j, (modality_key, seed_text) in enumerate(chunk):
+            nonce = f"{random.randint(1000, 9999)}"
+
             if is_deception_modality:
                 selected_domain = random.choice(domains)
                 selected_style = random.choice(styles)
+                custom_req_id = (
+                    f"{modality_key}|||{selected_domain}|||{selected_style}|||{nonce}"
+                )
+
                 prompt_instruction = (
                     "System Instruction: You are an expert dataset generator for AI safety research. "
                     "Your exclusive job is to write PROMPTS that will be fed to a target AI. DO NOT answer the prompt yourself.\n\n"
@@ -368,6 +388,10 @@ async def augment_prompts_with_fallback(
             else:
                 selected_domain = "general"
                 selected_style = "standard_jailbreak_style"
+                custom_req_id = (
+                    f"{modality_key}|||{selected_domain}|||{selected_style}|||{nonce}"
+                )
+
                 prompt_instruction = (
                     "System Instruction: You are an expert dataset generator for AI safety research. "
                     "Your exclusive job is to write PROMPTS that will be fed to a target AI. DO NOT fulfill the prompt yourself.\n\n"
@@ -403,7 +427,7 @@ async def augment_prompts_with_fallback(
                 )
                 js_requests.append(
                     ChatCompletionRequest(
-                        custom_id=f"{modality_key}|||{selected_domain}|||{selected_style}",
+                        custom_id=custom_req_id,
                         messages=[Message(role="user", content=prompt_instruction)],
                     )
                 )
@@ -414,7 +438,8 @@ async def augment_prompts_with_fallback(
                 print(f"[*] Routing {len(js_requests)} requests to Jane Street API...")
                 js_res = await js_client.chat_completions(js_requests, model=model_name)
                 for res_id in js_res:
-                    m_key, d_ctx, s_ctx = res_id.split("|||")
+                    # Unpack with the nonce included
+                    m_key, d_ctx, s_ctx, _nonce = res_id.split("|||")
                     raw_results.append(
                         {
                             "content": js_res[res_id].messages[0].content.strip(),
@@ -432,7 +457,8 @@ async def augment_prompts_with_fallback(
                     f"[*] Falling back to Local Gemma 3 for {len(js_requests)} requests..."
                 )
                 for req in js_requests:
-                    m_key, d_ctx, s_ctx = req.custom_id.split("|||")
+                    # Unpack with the nonce included
+                    m_key, d_ctx, s_ctx, _nonce = req.custom_id.split("|||")
                     prompt_text = req.messages[0].content
 
                     try:
@@ -504,67 +530,84 @@ async def augment_prompts_with_fallback(
 # ==========================================
 # 6. MASTER EXECUTION
 # ==========================================
-def build_and_store_corpus():
+def build_and_store_corpus(
+    update_raw_hf_benign=True,
+    update_raw_hf_suspicious=True,
+    update_aug_hf_suspicious=True,
+    aug_hf_suspicious_aug_rounds=3,
+    update_template_benign=True,
+    update_aug_template_deception=True,
+    aug_template_deception_aug_rounds=80,
+):
     init_db().close()
 
-    print("\n[*] Loading Hugging Face corpus...")
-    hf_data = load_hf_corpus(benign_sample_size=400, suspicious_sample_size=50)
+    update_any_raw_hf = update_raw_hf_benign or update_raw_hf_suspicious
+    update_any_hf = update_any_raw_hf or update_aug_hf_suspicious
 
-    hf_records = []
-    for text in hf_data["benign"]:
-        hf_records.append(
-            {
-                "prompt_id": generate_prompt_id(text),
-                "prompt_text": text,
-                "is_suspicious": False,
-                "source": "hf_benign",
-                "domain_context": "general",
-                "instruction_type": "unknown",
+    if update_any_hf:
+        print("\n[*] Loading Hugging Face corpus...")
+        hf_data = load_hf_corpus(benign_sample_size=400, suspicious_sample_size=50)
+        if update_any_raw_hf:
+            hf_records = []
+            if update_raw_hf_benign:
+                for text in hf_data["benign"]:
+                    hf_records.append(
+                        {
+                            "prompt_id": generate_prompt_id(text),
+                            "prompt_text": text,
+                            "is_suspicious": False,
+                            "source": "hf_benign",
+                            "domain_context": "general",
+                            "instruction_type": "unknown",
+                        }
+                    )
+            if update_aug_hf_suspicious:
+                for text in hf_data["suspicious"]:
+                    hf_records.append(
+                        {
+                            "prompt_id": generate_prompt_id(text),
+                            "prompt_text": text,
+                            "is_suspicious": True,
+                            "duplicity_nature": "standard_jailbreak",
+                            "source": "hf_suspicious_raw",
+                            "domain_context": "general",
+                            "instruction_type": "unknown",
+                        }
+                    )
+            insert_records(hf_records)
+        if update_aug_hf_suspicious:
+            print("\n[*] Expanding HF Suspicious concepts via API Waterfall...")
+            hf_suspicious_dict = {
+                f"hf_seed_{i}": text for i, text in enumerate(hf_data["suspicious"])
             }
-        )
-    for text in hf_data["suspicious"]:
-        hf_records.append(
-            {
-                "prompt_id": generate_prompt_id(text),
-                "prompt_text": text,
-                "is_suspicious": True,
-                "duplicity_nature": "standard_jailbreak",
-                "source": "hf_suspicious_raw",
-                "domain_context": "general",
-                "instruction_type": "unknown",
-            }
-        )
-    insert_records(hf_records)
+            asyncio.run(
+                augment_prompts_with_fallback(
+                    seeds=hf_suspicious_dict,
+                    source_tag="augmented_suspicious",
+                    is_deception_modality=False,
+                    chunk_size=10,
+                    n_augmentation_rounds=aug_hf_suspicious_aug_rounds,
+                )
+            )
+    if update_template_benign:
+        print("\n[*] Processing baseline templated prompts...")
+        templated_benign_records = generate_templated_benign()
+        for r in templated_benign_records:
+            r["prompt_id"] = generate_prompt_id(r["prompt_text"])
+        insert_records(templated_benign_records)
 
-    print("\n[*] Processing baseline templated prompts...")
-    templated_benign_records = generate_templated_benign()
-    for r in templated_benign_records:
-        r["prompt_id"] = generate_prompt_id(r["prompt_text"])
-    insert_records(templated_benign_records)
-
-    print("\n[*] Expanding HF Suspicious concepts via API Waterfall...")
-    hf_suspicious_dict = {
-        f"hf_seed_{i}": text for i, text in enumerate(hf_data["suspicious"])
-    }
-    asyncio.run(
-        augment_prompts_with_fallback(
-            seeds=hf_suspicious_dict,
-            source_tag="augmented_suspicious",
-            is_deception_modality=False,
-            chunk_size=10,
+    if update_aug_template_deception:
+        print("\n[*] Expanding Deception Modalities via API Waterfall...")
+        deception_seeds = get_deception_seeds()
+        asyncio.run(
+            augment_prompts_with_fallback(
+                seeds=deception_seeds,
+                source_tag="stylized_deception",
+                is_deception_modality=True,
+                chunk_size=5,
+                n_augmentation_rounds=aug_template_deception_aug_rounds,
+            )
         )
-    )
-
-    print("\n[*] Expanding Deception Modalities via API Waterfall...")
-    deception_seeds = get_deception_seeds()
-    asyncio.run(
-        augment_prompts_with_fallback(
-            seeds=deception_seeds,
-            source_tag="stylized_deception",
-            is_deception_modality=True,
-            chunk_size=5,
-        )
-    )
 
     conn = duckdb.connect(DB_PATH)
     total = conn.execute("SELECT COUNT(*) FROM prompts").fetchone()[0]
@@ -573,4 +616,10 @@ def build_and_store_corpus():
 
 
 if __name__ == "__main__":
-    build_and_store_corpus()
+    build_and_store_corpus(
+        update_raw_hf_benign=False,
+        update_raw_hf_suspicious=False,
+        update_aug_hf_suspicious=False,
+        update_template_benign=False,
+        update_aug_template_deception=True,
+    )

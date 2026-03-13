@@ -6,9 +6,11 @@ conn = duckdb.connect(DB_PATH)
 
 
 print(conn.execute("SELECT now()").fetch_df())
-like_str = "benign"
+like_str = "all"
 df = conn.execute(f"""
-        select * from prompts where source like '%{like_str}%'
+        select * from prompts --where prompt_version = {like_str}
+        --and is_duplicitous is TRUE
+        --ORDER BY RANDOM() --LIMIT 5
         
     """).fetch_df()
 

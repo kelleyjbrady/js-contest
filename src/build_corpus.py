@@ -250,9 +250,9 @@ async def fetch_openai_compat(client: AsyncOpenAI, prompt: str) -> tuple[str, st
 
     google_models = [
         "gemini-3.1-flash-lite-preview",  # 500 RPD
-        "gemma-3-27b-it",  # 14,400 RPD
         "gemini-3-flash-preview",  # 20 RPD
         "gemini-2.5-flash",  # 20 RPD
+        "gemma-3-27b-it",  # 14,400 RPD
     ]
 
     for model_name in google_models:
@@ -498,16 +498,21 @@ async def augment_prompts_with_fallback(
             try:
                 data = json.loads(raw_content)
                 variations = data.get("variations", [])
+
                 for v in variations:
-                    if len(v) > 15:
+                    # FIX: Handle if the LLM returned a list of dicts instead of a list of strings
+                    if isinstance(v, dict):
+                        # Grab the first value in the dict (usually "text" or "variation")
+                        v = next(iter(v.values()), "")
+
+                    # Ensure it is actually a string and long enough to be a valid prompt
+                    if isinstance(v, str) and len(v) > 15:
                         chunk_records.append(
                             {
                                 "prompt_id": generate_prompt_id(v),
                                 "prompt_text": v,
-                                "is_suspicious": mode
-                                == "suspicious",  # Dynamically mapped
-                                "is_duplicitous": mode
-                                == "deceptive",  # Dynamically mapped
+                                "is_suspicious": mode == "suspicious",
+                                "is_duplicitous": mode == "deceptive",
                                 "duplicity_nature": result["modality"]
                                 if mode == "deceptive"
                                 else f"standard_{mode}",
@@ -515,7 +520,7 @@ async def augment_prompts_with_fallback(
                                 "prompt_length_chars": len(v),
                                 "domain_context": result["domain"],
                                 "generation_style": result["style"],
-                                "instruction_type": "roleplay",  # All modes are roleplay structurally now
+                                "instruction_type": "roleplay",
                                 "augmentation_model": result["model"],
                                 "system_prompt_hash": result["sys_hash"],
                                 "prompt_version": result["prompt_version"],
@@ -556,6 +561,7 @@ def build_and_store_corpus(
     update_aug_template_deception=True,
     target_deception=1500,
     variations_per_seed=5,
+    oversample_multiple=1.5,
 ):
     init_db().close()
 
@@ -607,7 +613,10 @@ def build_and_store_corpus(
             }
             num_seeds = len(hf_benign_dict)
             rounds = (
-                math.ceil(target_hf_benign / (num_seeds * variations_per_seed))
+                math.ceil(
+                    (target_hf_benign * oversample_multiple)
+                    / (num_seeds * variations_per_seed)
+                )
                 if num_seeds > 0
                 else 0
             )
@@ -634,7 +643,10 @@ def build_and_store_corpus(
             }
             num_seeds = len(hf_suspicious_dict)
             rounds = (
-                math.ceil(target_hf_suspicious / (num_seeds * variations_per_seed))
+                math.ceil(
+                    (target_hf_suspicious * oversample_multiple)
+                    / (num_seeds * variations_per_seed)
+                )
                 if num_seeds > 0
                 else 0
             )
@@ -663,7 +675,10 @@ def build_and_store_corpus(
         }
         num_seeds = len(benign_seeds)
         rounds = (
-            math.ceil(target_template_benign / (num_seeds * variations_per_seed))
+            math.ceil(
+                (target_template_benign * oversample_multiple)
+                / (num_seeds * variations_per_seed)
+            )
             if num_seeds > 0
             else 0
         )
@@ -688,7 +703,10 @@ def build_and_store_corpus(
         deception_seeds = get_deception_seeds()
         num_seeds = len(deception_seeds)
         rounds = (
-            math.ceil(target_deception / (num_seeds * variations_per_seed))
+            math.ceil(
+                (target_deception * oversample_multiple)
+                / (num_seeds * variations_per_seed)
+            )
             if num_seeds > 0
             else 0
         )
@@ -720,15 +738,15 @@ if __name__ == "__main__":
         update_raw_hf_benign=False,
         update_raw_hf_suspicious=False,
         # Target counts for final augmented prompts
-        update_aug_hf_benign=True,
+        update_aug_hf_benign=False,
         target_hf_benign=800,
-        hf_benign_seed_count=100,  # <-- EXPOSED SEED CONTROL
+        hf_benign_seed_count=100,
         update_aug_hf_suspicious=False,
         target_hf_suspicious=500,
-        hf_suspicious_seed_count=100,  # <-- EXPOSED SEED CONTROL
-        update_aug_template_benign=True,
+        hf_suspicious_seed_count=100,
+        update_aug_template_benign=False,
         target_template_benign=800,
         update_aug_template_deception=True,
-        target_deception=1600,
+        target_deception=1000,
         variations_per_seed=5,
     )

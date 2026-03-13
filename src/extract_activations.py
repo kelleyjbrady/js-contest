@@ -19,28 +19,48 @@ TOTAL_LAYERS = 60
 LAYER_FMT = "model.layers.{}"
 
 
-def fetch_balanced_dataset(sample_size=10):
+def fetch_balanced_dataset(sample_size=150):
     conn = duckdb.connect(DB_PATH)
-
     dataset = {}
-    for cat in ["benign", "suspicious"]:
-        dataset[cat] = conn.execute(f"""
-            SELECT prompt_id, prompt_text FROM prompts 
-            WHERE is_suspicious = {"TRUE" if cat == "suspicious" else "FALSE"} 
-            AND is_duplicitous = FALSE 
-            AND status NOT IN ('completed', 'processing')
-            ORDER BY RANDOM() LIMIT {sample_size}
-        """).fetchall()
 
+    # 1. Benign (Pulling evenly from your augmented templates and HF data)
+    dataset["benign"] = conn.execute(f"""
+        SELECT prompt_id, prompt_text FROM prompts 
+        WHERE is_suspicious = FALSE 
+        AND is_duplicitous = FALSE 
+        AND source IN ('augmented_benign', 'augmented_hf_benign')
+        AND prompt_length_chars BETWEEN 250 AND 600
+        AND status NOT IN ('completed', 'processing')
+        ORDER BY RANDOM() LIMIT {sample_size}
+    """).fetchall()
+
+    # 2. Suspicious (Your newly balanced jailbreaks)
+    dataset["suspicious"] = conn.execute(f"""
+        SELECT prompt_id, prompt_text FROM prompts 
+        WHERE is_suspicious = TRUE 
+        AND is_duplicitous = FALSE 
+        AND source = 'augmented_suspicious'
+        AND prompt_length_chars BETWEEN 250 AND 600
+        AND status NOT IN ('completed', 'processing')
+        ORDER BY RANDOM() LIMIT {sample_size}
+    """).fetchall()
+
+    # 3. Deceptive (The stylized sleeper agents)
     dataset["deceptive"] = conn.execute(f"""
         SELECT prompt_id, prompt_text FROM prompts 
         WHERE is_duplicitous = TRUE 
+        AND source = 'stylized_deception'
+        AND prompt_length_chars BETWEEN 250 AND 600
         AND status NOT IN ('completed', 'processing')
-        AND prompt_version = 2
         ORDER BY RANDOM() LIMIT {sample_size}
     """).fetchall()
 
     conn.close()
+
+    # Quick sanity check print
+    for cat, records in dataset.items():
+        print(f"[*] Pulled {len(records)} records for category: {cat}")
+
     return dataset
 
 

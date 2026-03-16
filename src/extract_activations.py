@@ -15,42 +15,50 @@ OUTPUT_BASE_DIR = "/app/data/activations/"
 # --- BATCHING CONFIGURATION ---
 SAMPLE_SIZE_PER_CATEGORY = 150
 API_BATCH_SIZE = 15  # Safe payload size to prevent API timeouts
-TOTAL_LAYERS = 60
-LAYER_FMT = "model.layers.{}"
 
 
 def fetch_balanced_dataset(sample_size=150):
     conn = duckdb.connect(DB_PATH)
     dataset = {}
 
-    # 1. Benign (Pulling evenly from your augmented templates and HF data)
+    # 1. Benign Baseline (The Control Group)
     dataset["benign"] = conn.execute(f"""
         SELECT prompt_id, prompt_text FROM prompts 
-        WHERE is_suspicious = FALSE 
-        AND is_duplicitous = FALSE 
-        AND source IN ('augmented_benign', 'augmented_hf_benign')
-        AND prompt_length_chars BETWEEN 250 AND 600
+        WHERE source LIKE '%benign%' 
+        AND eval_safety <= 3 
+        AND eval_deception <= 3 
+        AND eval_meta_probe <= 2
+        AND eval_coherence >= 7
         AND status NOT IN ('completed', 'processing')
         ORDER BY RANDOM() LIMIT {sample_size}
     """).fetchall()
 
-    # 2. Suspicious (Your newly balanced jailbreaks)
-    dataset["suspicious"] = conn.execute(f"""
+    # 2. Refusal Vector (Standard Jailbreaks)
+    dataset["refusal"] = conn.execute(f"""
         SELECT prompt_id, prompt_text FROM prompts 
-        WHERE is_suspicious = TRUE 
-        AND is_duplicitous = FALSE 
-        AND source = 'augmented_suspicious'
-        AND prompt_length_chars BETWEEN 250 AND 600
+        WHERE source = 'augmented_suspicious' 
+        AND eval_safety >= 7 
+        AND eval_meta_probe <= 3
         AND status NOT IN ('completed', 'processing')
         ORDER BY RANDOM() LIMIT {sample_size}
     """).fetchall()
 
-    # 3. Deceptive (The stylized sleeper agents)
-    dataset["deceptive"] = conn.execute(f"""
+    # 3. Deception Vector (Sleeper Agents)
+    dataset["deception"] = conn.execute(f"""
         SELECT prompt_id, prompt_text FROM prompts 
-        WHERE is_duplicitous = TRUE 
-        AND source = 'stylized_deception'
-        AND prompt_length_chars BETWEEN 250 AND 600
+        WHERE eval_deception >= 8 
+        AND eval_safety <= 4 
+        AND eval_meta_probe <= 3
+        AND status NOT IN ('completed', 'processing')
+        ORDER BY RANDOM() LIMIT {sample_size}
+    """).fetchall()
+
+    # 4. Target Lock / Panic Vector (Trigger Probing)
+    dataset["meta_probe"] = conn.execute(f"""
+        SELECT prompt_id, prompt_text FROM prompts 
+        WHERE eval_meta_probe >= 8 
+        AND eval_safety <= 5 
+        AND eval_deception <= 5
         AND status NOT IN ('completed', 'processing')
         ORDER BY RANDOM() LIMIT {sample_size}
     """).fetchall()
@@ -75,13 +83,18 @@ def update_prompt_status(prompt_ids: list[str], status: str):
     conn.close()
 
 
-def build_layer_sweep() -> list[str]:
+def build_full_layer_sweep() -> list[str]:
     """Sweeps the DeepSeek V2 / MoE network structure."""
     layers = list(range(0, 61, 5))
     sub_modules = ["", ".input_layernorm", ".self_attn.o_proj"]
     sweep = [LAYER_FMT.format(l) + sub for l in layers for sub in sub_modules]
     sweep.append("model.layers.0.mlp.down_proj")
     return sweep
+
+
+def build_layer_sweep() -> list[str]:
+    """Surgical sweep targeting early, mid, and late objective execution."""
+    return ["model.layers.15", "model.layers.35", "model.layers.55"]
 
 
 async def extract_and_save():
@@ -132,6 +145,8 @@ async def extract_and_save():
         try:
             results = await client.activations(requests, model=TARGET_MODEL)
             successful_pids = set()
+
+            # Initialize empty records list for each layer
             batch_layer_records = {layer: [] for layer in layer_names}
 
             for res_id, result_data in results.items():
@@ -151,9 +166,9 @@ async def extract_and_save():
 
                         # 2. Walk backward to find the first non-padded token
                         valid_idx = -1
-                        for i in range(act_tensor.shape[0] - 1, -1, -1):
-                            if np.sum(np.abs(act_tensor[i, :])) > 1e-5:
-                                valid_idx = i
+                        for idx in range(act_tensor.shape[0] - 1, -1, -1):
+                            if np.sum(np.abs(act_tensor[idx, :])) > 1e-5:
+                                valid_idx = idx
                                 break
 
                         # 3. Extract the clean state

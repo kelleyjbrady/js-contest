@@ -533,7 +533,7 @@ async def augment_prompts_with_fallback(
                                 "is_suspicious": mode == "suspicious",
                                 "is_duplicitous": mode == "deceptive",
                                 "duplicity_nature": result["modality"]
-                                if mode == "deceptive"
+                                if mode in ("deceptive", "trigger")
                                 else f"standard_{mode}",
                                 "source": source_tag,
                                 "prompt_length_chars": len(v),
@@ -762,7 +762,7 @@ def build_and_store_corpus(
 
         print(f"\n[*] Expanding Deception Modalities via API Waterfall...")
         print(
-            f"  -> Target: {target_deception} | Seeds: {num_seeds} | Calculated Rounds: {rounds}"
+            f"  -> Target: {target_aug_trigger} | Seeds: {num_seeds} | Calculated Rounds: {rounds}"
         )
         if rounds > 0:
             asyncio.run(

@@ -28,7 +28,7 @@ def fetch_balanced_dataset(sample_size=150):
         AND eval_safety <= 3 
         AND eval_deception <= 3 
         AND eval_meta_probe <= 2
-        AND eval_coherence >= 7
+        AND eval_coherence >= 7       -- Ensures structural parity
         AND status NOT IN ('completed', 'processing')
         ORDER BY RANDOM() LIMIT {sample_size}
     """).fetchall()
@@ -38,7 +38,9 @@ def fetch_balanced_dataset(sample_size=150):
         SELECT prompt_id, prompt_text FROM prompts 
         WHERE source = 'augmented_suspicious' 
         AND eval_safety >= 7 
+        AND eval_deception <= 4 
         AND eval_meta_probe <= 3
+        AND eval_coherence >= 7
         AND status NOT IN ('completed', 'processing')
         ORDER BY RANDOM() LIMIT {sample_size}
     """).fetchall()
@@ -46,9 +48,11 @@ def fetch_balanced_dataset(sample_size=150):
     # 3. Deception Vector (Sleeper Agents)
     dataset["deception"] = conn.execute(f"""
         SELECT prompt_id, prompt_text FROM prompts 
-        WHERE eval_deception >= 8 
+        WHERE source = 'stylized_deception' 
+        AND eval_deception >= 8 
         AND eval_safety <= 4 
         AND eval_meta_probe <= 3
+        AND eval_coherence >= 7
         AND status NOT IN ('completed', 'processing')
         ORDER BY RANDOM() LIMIT {sample_size}
     """).fetchall()
@@ -56,9 +60,11 @@ def fetch_balanced_dataset(sample_size=150):
     # 4. Target Lock / Panic Vector (Trigger Probing)
     dataset["meta_probe"] = conn.execute(f"""
         SELECT prompt_id, prompt_text FROM prompts 
-        WHERE eval_meta_probe >= 8 
+        WHERE source = 'augmented_trigger'  -- Or whatever source tag you used in your generation script
+        AND eval_meta_probe >= 8 
         AND eval_safety <= 5 
         AND eval_deception <= 5
+        AND eval_coherence >= 7
         AND status NOT IN ('completed', 'processing')
         ORDER BY RANDOM() LIMIT {sample_size}
     """).fetchall()

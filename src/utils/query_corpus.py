@@ -9,6 +9,7 @@ print(conn.execute("SELECT now()").fetch_df())
 like_str = "all"
 df = conn.execute(f"""
         select * from prompts --where prompt_version = {like_str}
+        --where eval_status = '{like_str}'
         --and is_duplicitous is TRUE
         --ORDER BY RANDOM() --LIMIT 5
         

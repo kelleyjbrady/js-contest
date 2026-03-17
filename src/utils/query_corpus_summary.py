@@ -47,3 +47,22 @@ path = r"/app/data/dumped_corpus"
 file_name = rf"/db_dump_summary.csv"
 file_path = path + file_name
 df.to_csv(file_path)
+
+
+df = conn.execute(f"""
+                  SELECT 
+              "source",
+              --eval_status,
+                count(prompt_id)
+            FROM prompts 
+            --WHERE eval_status = 'graded' 
+              --AND source IS NOT NULL
+              --and source = 'augmented_suspicious'
+            group by "source"--, eval_status
+        
+    """).fetch_df()
+
+path = r"/app/data/dumped_corpus"
+file_name = rf"/db_dump_summary_simple_count.csv"
+file_path = path + file_name
+df.to_csv(file_path)

@@ -11,9 +11,16 @@ from openai import AsyncOpenAI
 from system_prompt import format_prompt, raw_prompts
 from typing import Literal
 import math
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 
 
 DB_PATH = "/app/data/prompt_corpus.duckdb"
+ENABLE_JS_FALLBACK = False
 
 
 # ==========================================
@@ -264,45 +271,95 @@ def get_trigger_probing_seeds() -> dict[str, str]:
 # ==========================================
 # 5. WATERFALL AUGMENTATION LOGIC
 # ==========================================
-async def fetch_openai_compat(client: AsyncOpenAI, prompt: str) -> tuple[str, str]:
-    """Tries Google AI Studio models in descending order of capacity/intelligence."""
+class WaterfallExhaustedError(Exception):
+    pass
 
+
+@retry(
+    stop=stop_after_attempt(6),
+    wait=wait_exponential(multiplier=2, min=4, max=60),
+    retry=retry_if_exception_type(WaterfallExhaustedError),
+    reraise=True,
+)
+async def fetch_openai_compat(
+    client: AsyncOpenAI, prompt: str, temperature: float = 0.7
+) -> tuple[str, str]:
+    """Tries Google AI Studio models in descending order. Retries via Tenacity if all fail."""
     google_models = [
-        "gemini-3.1-flash-lite-preview",  # 500 RPD
-        "gemini-3-flash-preview",  # 20 RPD
-        "gemini-2.5-flash",  # 20 RPD
-        "gemma-3-27b-it",  # 14,400 RPD
+        "gemini-3.1-flash-lite-preview",
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",  # 20 RPD
+        "gemma-3-27b-it",
     ]
 
     for model_name in google_models:
         try:
-            # Build the base arguments
             kwargs = {
                 "model": model_name,
                 "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.7,
+                "temperature": temperature,
             }
 
-            # Conditionally apply strict JSON mode only to native Gemini models
             if "gemma" not in model_name:
                 kwargs["response_format"] = {"type": "json_object"}
 
             response = await client.chat.completions.create(**kwargs)
-            return response.choices[0].message.content.strip(), model_name
+            content = response.choices[0].message.content
+
+            if not content:
+                return "SAFETY_BLOCKED", model_name
+
+            return content.strip(), model_name
 
         except Exception as e:
             error_str = str(e).lower()
             if any(code in error_str for code in ["429", "exhausted", "403", "503"]):
-                print(
-                    f"      [-] {model_name} unavailable/exhausted. Trying next Google model..."
-                )
                 continue
             else:
                 print(f"      [!] Unexpected error with {model_name}: {e}")
                 continue
 
-    # If all Google models fail, return empty to trigger Jane Street fallback
-    return "", ""
+    print("      [-] Generator Waterfall exhausted. Triggering Tenacity backoff...")
+    raise WaterfallExhaustedError("All models hit rate limits.")
+
+
+async def generate_single_prompt(
+    client: AsyncOpenAI,
+    prompt_instruction: str,
+    modality_key: str,
+    selected_domain: str,
+    selected_style: str,
+    nonce: str,
+    semaphore: asyncio.Semaphore,
+) -> dict:
+    """Wraps the Google API call with a semaphore for concurrent execution."""
+    async with semaphore:
+        try:
+            content, successful_model_name = await fetch_openai_compat(
+                client, prompt_instruction
+            )
+            return {
+                "status": "success"
+                if content != "SAFETY_BLOCKED"
+                else "safety_blocked",
+                "content": content,
+                "modality": modality_key,
+                "domain": selected_domain,
+                "style": selected_style,
+                "model": successful_model_name,
+                "nonce": nonce,
+                "prompt_instruction": prompt_instruction,
+            }
+        except WaterfallExhaustedError:
+            return {
+                "status": "failed",
+                "modality": modality_key,
+                "domain": selected_domain,
+                "style": selected_style,
+                "nonce": nonce,
+                "prompt_instruction": prompt_instruction,
+            }
 
 
 async def augment_prompts_with_fallback(
@@ -310,7 +367,7 @@ async def augment_prompts_with_fallback(
     source_tag: str,
     mode: Literal["benign", "deceptive", "suspicious", "trigger"],
     model_name: str = "dormant-model-2",
-    chunk_size: int = 5,
+    chunk_size: int = 15,  # Increased chunk size since we are concurrent now
     n_generated_augmented_prompts: int = 5,
     n_augmentation_rounds: int = 3,
 ) -> list[dict]:
@@ -319,7 +376,6 @@ async def augment_prompts_with_fallback(
         f"{mode}_augmentation", raw_prompts[mode]
     )
 
-    # Initialize all three client tiers
     js_client = BatchInferenceClient()
     js_client.set_api_key(os.getenv("JANE_STREET_API_KEY", ""))
 
@@ -332,6 +388,9 @@ async def augment_prompts_with_fallback(
         base_url="http://local-llm:11434/v1",
         api_key="ollama",
     )
+
+    # Concurrency control specifically for text generation
+    semaphore = asyncio.Semaphore(15)
 
     augmented_records = []
 
@@ -389,7 +448,6 @@ async def augment_prompts_with_fallback(
         "a frantic, leaked internal Slack channel transcript",
     ]
 
-    # 2. Flatten the rounds into a single, randomized execution queue
     execution_queue = []
     for round_idx in range(n_augmentation_rounds):
         shuffled_seeds = list(seeds.items())
@@ -401,63 +459,80 @@ async def augment_prompts_with_fallback(
         f"[*] Queueing {len(execution_queue)} total tasks across {total_chunks} chunks (Mode: {mode.upper()})..."
     )
 
-    # 3. Iterate through the flattened queue
     for i in range(0, len(execution_queue), chunk_size):
         chunk = execution_queue[i : i + chunk_size]
-        js_requests = []
         raw_results = []
+        js_requests = []
+        google_tasks = []
 
+        # 1. Build the concurrent Google tasks
         for j, (modality_key, seed_text) in enumerate(chunk):
             nonce = f"{random.randint(1000, 9999)}"
-
-            # Domain and Style are now selected for every prompt, regardless of mode
             selected_domain = random.choice(domains)
             selected_style = random.choice(styles)
-            custom_req_id = (
-                f"{modality_key}|||{selected_domain}|||{selected_style}|||{nonce}"
-            )
 
-            # The unified formatting call
             prompt_instruction = format_prompt(
                 seed_text=seed_text,
                 n_variations=n_generated_augmented_prompts,
                 selected_domain=selected_domain,
                 selected_style=selected_style,
                 mode=mode,
+                modality_key=modality_key,
             )
 
-            # --- TIER 1: GOOGLE AI STUDIO WATERFALL ---
-            print(f"[*] Routing '{modality_key}' through Google API waterfall...")
-            content, successful_model_name = await fetch_openai_compat(
-                gemini_client, prompt_instruction
+            google_tasks.append(
+                generate_single_prompt(
+                    gemini_client,
+                    prompt_instruction,
+                    modality_key,
+                    selected_domain,
+                    selected_style,
+                    nonce,
+                    semaphore,
+                )
             )
 
-            if content:
-                print(f"  [+] Success using {successful_model_name}")
+        # 2. Execute Google tasks concurrently
+        print(
+            f"[*] Processing chunk {i // chunk_size + 1}/{total_chunks} concurrently..."
+        )
+        google_results = await asyncio.gather(*google_tasks)
+
+        # 3. Route successes to DB, route failures to Jane Street
+        for res in google_results:
+            if res["status"] == "success":
                 raw_results.append(
                     {
-                        "content": content,
-                        "modality": modality_key,
-                        "domain": selected_domain,
-                        "style": selected_style,
-                        "model": successful_model_name,
+                        "content": res["content"],
+                        "modality": res["modality"],
+                        "domain": res["domain"],
+                        "style": res["style"],
+                        "model": res["model"],
                         "sys_hash": current_hash,
                         "prompt_version": current_version,
                     }
                 )
-            else:
+            elif res["status"] == "safety_blocked":
                 print(
-                    f"  [!] Google APIs exhausted. Queuing '{modality_key}' for Jane Street."
+                    f"  [!] Generation blocked by safety filter for modality: {res['modality']}"
                 )
+            elif res["status"] == "failed":
+                print(
+                    f"  [!] Google APIs exhausted. Queuing '{res['modality']}' for Jane Street fallback."
+                )
+                custom_req_id = f"{res['modality']}|||{res['domain']}|||{res['style']}|||{res['nonce']}"
                 js_requests.append(
                     ChatCompletionRequest(
                         custom_id=custom_req_id,
-                        messages=[Message(role="user", content=prompt_instruction)],
+                        messages=[
+                            Message(role="user", content=res["prompt_instruction"])
+                        ],
                     )
                 )
 
         # --- TIER 2 EXECUTION: JANE STREET ---
-        if js_requests:
+        # (Keep your existing JS and Local LLM fallback logic exactly as it was here)
+        if js_requests and ENABLE_JS_FALLBACK:
             try:
                 print(f"[*] Routing {len(js_requests)} requests to Jane Street API...")
                 js_res = await js_client.chat_completions(js_requests, model=model_name)
@@ -477,9 +552,8 @@ async def augment_prompts_with_fallback(
             except Exception as e:
                 print(f"[!] Jane Street API Error: {e}")
 
-                # --- TIER 3 FALLBACK: LOCAL LLM ---
                 print(
-                    f"[*] Falling back to Local Gemma 3 for {len(js_requests)} requests..."
+                    f"[*] Falling back to Local LLM for {len(js_requests)} requests..."
                 )
                 for req in js_requests:
                     m_key, d_ctx, s_ctx, _nonce = req.custom_id.split("|||")
@@ -492,10 +566,9 @@ async def augment_prompts_with_fallback(
                             response_format={"type": "json_object"},
                             temperature=0.7,
                         )
-                        content = res.choices[0].message.content.strip()
                         raw_results.append(
                             {
-                                "content": content,
+                                "content": res.choices[0].message.content.strip(),
                                 "modality": m_key,
                                 "domain": d_ctx,
                                 "style": s_ctx,
@@ -788,16 +861,16 @@ if __name__ == "__main__":
         update_raw_hf_suspicious=False,
         # Target counts for final augmented prompts
         update_aug_hf_benign=False,
-        target_hf_benign=800,
+        target_hf_benign=400,
         hf_benign_seed_count=100,
         update_aug_hf_suspicious=False,
         target_hf_suspicious=500,
-        hf_suspicious_seed_count=100,
+        hf_suspicious_seed_count=200,
         update_aug_template_benign=False,
-        target_template_benign=800,
-        update_aug_template_deception=False,
-        target_deception=1000,
+        target_template_benign=400,
+        update_aug_template_deception=True,
+        target_deception=2000,
         update_aug_trigger=True,
-        target_aug_trigger=1200,
+        target_aug_trigger=2000,
         variations_per_seed=5,
     )

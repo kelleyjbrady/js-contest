@@ -3,6 +3,7 @@ secrets.json
 .vscode
 data/*
 *.csv
+notes/*
 
 
 ##### PYTHON #####

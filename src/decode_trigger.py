@@ -8,16 +8,13 @@ from transformers import AutoTokenizer
 import json
 from datetime import datetime
 
-ACTIVATIONS_DIR = (
-    "/app/data/activations/combined_parquet/"  # Update to your stratified run
-)
-CLEAN_IDS_FILE = "/app/data/clean_prompt_ids.csv"
+COMBINED_BATCH = "20260318_230424"
+ACTIVATIONS_DIR = f"/app/data/activations/combined_parquet/{COMBINED_BATCH}_batched/"  # Update to your stratified run
+CLEAN_IDS_FILE = ACTIVATIONS_DIR + "clean_prompt_ids.csv"
 HF_MODEL_REPO = "deepseek-ai/DeepSeek-V3-0324"
-DECODE_WRITE = "/app/data/decode/"
+DECODE_WRITE = ACTIVATIONS_DIR + "decode/"
 
-run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-export_dir = os.path.join(DECODE_WRITE, f"decode_{run_timestamp}_batched")
-os.makedirs(export_dir, exist_ok=True)
+os.makedirs(DECODE_WRITE, exist_ok=True)
 
 
 def get_deepseek_unembedding():
@@ -183,25 +180,44 @@ def execute_decoding(layer_target: int = 55):
     print(
         f"\n[*] Writing Layer {layer_target} {_fname_prefix} to disk (PyTorch Native)..."
     )
-    embed_path = os.path.join(export_dir, f"{_fname_prefix}_layer_{layer_target}.pt")
+    embed_path = os.path.join(DECODE_WRITE, f"{_fname_prefix}_layer_{layer_target}.pt")
     torch.save(_write_matrix, embed_path)
 
     print(f"[*] Writing Layer {layer_target} isolated trigger vector to disk...")
-    trigger_path = os.path.join(export_dir, f"trigger_layer_{layer_target}.pt")
+    trigger_path = os.path.join(DECODE_WRITE, f"trigger_layer_{layer_target}.pt")
     torch.save(trigger_tensor, trigger_path)
     # 5. Extract the Top-K Tokens
     top_k = 20
     top_scores, top_indices = torch.topk(similarities, top_k)
 
+    output_filepath = os.path.join(DECODE_WRITE, f"candidates_layer_{layer_target}.txt")
+
     print("\n==================================================")
     print("🎯 ISOLATED SLEEPER AGENT TRIGGER CANDIDATES 🎯")
     print("==================================================")
-    for rank, (score, idx) in enumerate(zip(top_scores, top_indices)):
-        token_str = tokenizer.decode([idx.item()])
-        # Clean up whitespace/special chars for terminal printing
-        clean_token = repr(token_str)
-        print(f" {rank + 1:2d}. Score: {score.item():.4f} | Token: {clean_token}")
-    print("==================================================")
+
+    # Open with utf-8 to safely capture all 129,280 possible vocabulary strings
+    with open(output_filepath, "w", encoding="utf-8") as f:
+        f.write("==================================================\n")
+        f.write(f"🎯 ISOLATED TRIGGER CANDIDATES | LAYER {layer_target} 🎯\n")
+        f.write("==================================================\n")
+
+        for rank, (score, idx) in enumerate(zip(top_scores, top_indices)):
+            token_str = tokenizer.decode([idx.item()])
+
+            # repr() safely escapes raw bytes, tabs, and newlines
+            clean_token = repr(token_str)
+
+            # Format the line once
+            line = f" {rank + 1:2d}. Score: {score.item():.4f} | Token: {clean_token}"
+
+            # Print to terminal and write to file
+            print(line)
+            f.write(line + "\n")
+
+        f.write("==================================================\n")
+
+    print(f"[*] Candidates successfully secured to disk at: {output_filepath}")
 
 
 if __name__ == "__main__":

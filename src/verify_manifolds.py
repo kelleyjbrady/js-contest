@@ -5,8 +5,8 @@ import pandas as pd
 from sklearn.decomposition import PCA
 import scipy.stats as stats
 
-ACTIVATIONS_DIR = "/app/data/activations/run*/"  # Adjust to your path
-OUTPUT_CLEAN_IDS = "/app/data/clean_prompt_ids.csv"
+ACTIVATIONS_DIR = "/app/data/activations/combined_parquet/20260318_230424_batched/"  # Adjust to your path
+OUTPUT_CLEAN_IDS = ACTIVATIONS_DIR + "clean_prompt_ids.csv"
 
 
 def compute_simca_limits(X, variance_threshold=0.85):

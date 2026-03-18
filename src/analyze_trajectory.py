@@ -5,11 +5,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-ACTIVATIONS_DIR = (
-    "/app/data/activations/combined_parquet/"  # Update to your daily run path
-)
-CLEAN_IDS_FILE = "/app/data/clean_prompt_ids.csv"
-OUTPUT_DIR = "/app/data/"
+ACTIVATIONS_DIR = "/app/data/activations/combined_parquet/20260318_230424_batched/"  # Update to your daily run path
+CLEAN_IDS_FILE = "/app/data/activations/combined_parquet/20260318_230424_batched/clean_prompt_ids.csv"
+OUTPUT_DIR = ACTIVATIONS_DIR
 
 
 def load_clean_data(file_path, clean_ids):

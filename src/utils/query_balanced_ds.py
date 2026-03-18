@@ -6,7 +6,7 @@ DB_PATH = "/app/data/prompt_corpus.duckdb"
 OUTPUT_BASE_DIR = "/app/data/dumped_corpus/"
 
 
-def fetch_balanced_dataset(sample_size=650) -> dict:
+def fetch_balanced_dataset(sample_size=20000) -> dict:
     """Fetches a balanced tri-categorical dataset and returns pandas DataFrames."""
     dataset = {}
 

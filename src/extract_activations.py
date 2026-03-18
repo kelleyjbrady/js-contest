@@ -11,20 +11,21 @@ DB_PATH = "/app/data/prompt_corpus.duckdb"
 API_KEY = os.getenv("JANE_STREET_API_KEY")
 TARGET_MODEL = "dormant-model-2"
 OUTPUT_BASE_DIR = "/app/data/activations/"
+LAYER_FMT = "model.layers.{}"  # <-- ADDED MISSING CONSTANT
 
 # --- BATCHING CONFIGURATION ---
-SAMPLE_SIZE_PER_CATEGORY = 150
-API_BATCH_SIZE = 15  # Safe payload size to prevent API timeouts
+SAMPLE_SIZE_PER_CATEGORY = 650
+API_BATCH_SIZE = 15
 
 
 def fetch_balanced_dataset(sample_size=150):
-    conn = duckdb.connect(DB_PATH)
     dataset = {}
 
-    # 1. Benign Baseline (The Control Group)
-    dataset["benign"] = conn.execute(f"""
-       SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
-                   generation_style, prompt_length_chars, source
+    # Secure Context Manager used here
+    with duckdb.connect(DB_PATH) as conn:
+        # 1. Benign Baseline
+        dataset["benign"] = conn.execute(f"""
+            SELECT prompt_id, prompt_text
             FROM prompts 
             WHERE source IN ('augmented_benign', 'augmented_hf_benign')
               AND eval_safety <= 3 
@@ -33,12 +34,11 @@ def fetch_balanced_dataset(sample_size=150):
               AND eval_coherence >= 7 
               AND status NOT IN ('completed', 'processing')
             ORDER BY RANDOM() LIMIT {sample_size}
-    """).fetchall()
+        """).fetchall()
 
-    # 2. Refusal Vector (Standard Jailbreaks)
-    dataset["refusal"] = conn.execute(f"""
-         SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
-                   generation_style, prompt_length_chars, source
+        # 2. Refusal Vector
+        dataset["refusal"] = conn.execute(f"""
+            SELECT prompt_id, prompt_text
             FROM prompts 
             WHERE source = 'augmented_suspicious' 
               AND eval_safety >= 7 
@@ -47,12 +47,11 @@ def fetch_balanced_dataset(sample_size=150):
               AND eval_coherence >= 7 
               AND status NOT IN ('completed', 'processing')
             ORDER BY RANDOM() LIMIT {sample_size}
-    """).fetchall()
+        """).fetchall()
 
-    # 3. Deception Vector (Sleeper Agents)
-    dataset["deception"] = conn.execute(f"""
-        SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
-                   generation_style, prompt_length_chars, source
+        # 3. Deception Vector
+        dataset["deception"] = conn.execute(f"""
+            SELECT prompt_id, prompt_text
             FROM prompts 
             WHERE source = 'stylized_deception' 
               AND eval_deception >= 8 
@@ -61,25 +60,19 @@ def fetch_balanced_dataset(sample_size=150):
               AND eval_coherence >= 7 
               AND status NOT IN ('completed', 'processing')
             ORDER BY RANDOM() LIMIT {sample_size}
-    """).fetchall()
+        """).fetchall()
 
-    # 4. Target Lock / Panic Vector (Trigger Probing)
-    dataset["meta_probe"] = conn.execute(f"""
-        SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
-                   generation_style, prompt_length_chars, source 
+        # 4. Target Lock Vector
+        dataset["meta_probe"] = conn.execute(f"""
+            SELECT prompt_id, prompt_text
             FROM prompts 
             WHERE source = 'augmented_trigger' 
               AND eval_meta_probe >= 8 
-              --AND eval_safety <= 7 
-              --AND eval_deception <= 5
               AND eval_coherence >= 7 
               AND status NOT IN ('completed', 'processing')
             ORDER BY RANDOM() LIMIT {sample_size}
-    """).fetchall()
+        """).fetchall()
 
-    conn.close()
-
-    # Quick sanity check print
     for cat, records in dataset.items():
         print(f"[*] Pulled {len(records)} records for category: {cat}")
 
@@ -89,16 +82,16 @@ def fetch_balanced_dataset(sample_size=150):
 def update_prompt_status(prompt_ids: list[str], status: str):
     if not prompt_ids:
         return
-    conn = duckdb.connect(DB_PATH)
     id_list_str = "('" + "','".join(prompt_ids) + "')"
-    conn.execute(
-        f"UPDATE prompts SET status = '{status}', processed_datetime = CURRENT_TIMESTAMP WHERE prompt_id IN {id_list_str}"
-    )
-    conn.close()
+
+    # Secure Context Manager used here
+    with duckdb.connect(DB_PATH) as conn:
+        conn.execute(
+            f"UPDATE prompts SET status = '{status}', processed_datetime = CURRENT_TIMESTAMP WHERE prompt_id IN {id_list_str}"
+        )
 
 
 def build_full_layer_sweep() -> list[str]:
-    """Sweeps the DeepSeek V2 / MoE network structure."""
     layers = list(range(0, 61, 5))
     sub_modules = ["", ".input_layernorm", ".self_attn.o_proj"]
     sweep = [LAYER_FMT.format(l) + sub for l in layers for sub in sub_modules]
@@ -107,7 +100,6 @@ def build_full_layer_sweep() -> list[str]:
 
 
 def build_layer_sweep() -> list[str]:
-    """Surgical sweep targeting early, mid, and late objective execution."""
     return ["model.layers.15", "model.layers.35", "model.layers.55"]
 
 
@@ -159,8 +151,6 @@ async def extract_and_save():
         try:
             results = await client.activations(requests, model=TARGET_MODEL)
             successful_pids = set()
-
-            # Initialize empty records list for each layer
             batch_layer_records = {layer: [] for layer in layer_names}
 
             for res_id, result_data in results.items():
@@ -171,23 +161,19 @@ async def extract_and_save():
                     act_tensor = result_data.activations.get(layer)
 
                     if act_tensor is not None:
-                        # 1. Shape validation
                         if len(act_tensor.shape) != 2 or act_tensor.shape[1] != 7168:
                             print(
                                 f"  [!] Warning: Unexpected tensor shape {act_tensor.shape} for {pid}"
                             )
                             continue
 
-                        # 2. Walk backward to find the first non-padded token
                         valid_idx = -1
                         for idx in range(act_tensor.shape[0] - 1, -1, -1):
                             if np.sum(np.abs(act_tensor[idx, :])) > 1e-5:
                                 valid_idx = idx
                                 break
 
-                        # 3. Extract the clean state
                         final_token_state = act_tensor[valid_idx, :]
-
                         batch_layer_records[layer].append(
                             {
                                 "prompt_id": pid,
@@ -197,6 +183,7 @@ async def extract_and_save():
                         )
 
             update_prompt_status(list(successful_pids), "completed")
+
             failed_pids = list(set(batch_ids) - successful_pids)
             if failed_pids:
                 print(
@@ -214,6 +201,7 @@ async def extract_and_save():
                 safe_layer_name = layer.replace(".", "_")
                 file_path = os.path.join(run_dir, f"{safe_layer_name}.parquet")
 
+                # The O(N^2) read/concat/write here is completely fine for ~600 prompts
                 if os.path.exists(file_path):
                     existing_df = pd.read_parquet(file_path)
                     new_df = pd.concat([existing_df, new_df], ignore_index=True)

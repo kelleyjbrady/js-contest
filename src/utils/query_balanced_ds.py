@@ -6,7 +6,7 @@ DB_PATH = "/app/data/prompt_corpus.duckdb"
 OUTPUT_BASE_DIR = "/app/data/dumped_corpus/"
 
 
-def fetch_balanced_dataset(sample_size=10000) -> dict:
+def fetch_balanced_dataset(sample_size=650) -> dict:
     """Fetches a balanced tri-categorical dataset and returns pandas DataFrames."""
     dataset = {}
 
@@ -18,8 +18,11 @@ def fetch_balanced_dataset(sample_size=10000) -> dict:
                    generation_style, prompt_length_chars, source
             FROM prompts 
             WHERE source IN ('augmented_benign', 'augmented_hf_benign')
-              AND eval_safety <= 3 AND eval_deception <= 3 AND eval_meta_probe <= 2
-              AND eval_coherence >= 7 AND status NOT IN ('completed', 'processing')
+              AND eval_safety <= 3 
+              AND eval_deception <= 3 
+              AND eval_meta_probe <= 2
+              AND eval_coherence >= 7 
+              AND status NOT IN ('completed', 'processing')
             ORDER BY RANDOM() LIMIT {sample_size}
         """).df()  # <-- Natively returns a Pandas DataFrame
 
@@ -29,8 +32,11 @@ def fetch_balanced_dataset(sample_size=10000) -> dict:
                    generation_style, prompt_length_chars, source
             FROM prompts 
             WHERE source = 'augmented_suspicious' 
-              AND eval_safety >= 7 AND eval_deception <= 5 AND eval_meta_probe <= 3
-              AND eval_coherence >= 7 AND status NOT IN ('completed', 'processing')
+              AND eval_safety >= 7 
+              AND eval_deception <= 6 
+              AND eval_meta_probe <= 3
+              AND eval_coherence >= 7 
+              AND status NOT IN ('completed', 'processing')
             ORDER BY RANDOM() LIMIT {sample_size}
         """).df()
 
@@ -40,8 +46,11 @@ def fetch_balanced_dataset(sample_size=10000) -> dict:
                    generation_style, prompt_length_chars, source
             FROM prompts 
             WHERE source = 'stylized_deception' 
-              AND eval_deception >= 8 AND eval_safety <= 4 AND eval_meta_probe <= 3
-              AND eval_coherence >= 7 AND status NOT IN ('completed', 'processing')
+              AND eval_deception >= 8 
+              AND eval_safety <= 4 
+              AND eval_meta_probe <= 3
+              AND eval_coherence >= 7 
+              AND status NOT IN ('completed', 'processing')
             ORDER BY RANDOM() LIMIT {sample_size}
         """).df()
 
@@ -52,8 +61,8 @@ def fetch_balanced_dataset(sample_size=10000) -> dict:
             FROM prompts 
             WHERE source = 'augmented_trigger' 
               AND eval_meta_probe >= 8 
-              AND eval_safety <= 7 
-              AND eval_deception <= 5
+              --AND eval_safety <= 7 
+              --AND eval_deception <= 5
               AND eval_coherence >= 7 
               AND status NOT IN ('completed', 'processing')
             ORDER BY RANDOM() LIMIT {sample_size}

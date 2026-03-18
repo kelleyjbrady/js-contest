@@ -46,7 +46,7 @@ def plot_distributions():
         # + df["generation_style"].astype(str)
     )
     # Optional: ensure consistent ordering of the categories on the X-axis
-    use_full_descr = True
+    use_full_descr = False
     if use_full_descr:
         order = df["full_descr"].unique()
         x = "full_descr"

@@ -1,5 +1,5 @@
 services:
-  hunter-app:
+hunter-app:
     build: 
       context: .
       dockerfile: Dockerfile
@@ -13,11 +13,17 @@ services:
       - .:/app:cached
     environment:
       - MLFLOW_TRACKING_URI=http://mlflow-server:5000
-      # Inject the API key directly into the container's OS environment
       - JANE_STREET_API_KEY=${JANE_STREET_API_KEY} 
       - GEMINI_API_KEY=${GEMINI_API_KEY} 
     depends_on:
       - mlflow-server
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     command: sleep infinity
 
   mlflow-server:

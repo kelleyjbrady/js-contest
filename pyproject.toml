@@ -6,24 +6,29 @@ authors = ["Kelley Brady"]
 readme = "README.md"
 package-mode = false
 
+[[tool.poetry.source]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu121" # Or your preferred CUDA version
+priority = "explicit"
+
 [tool.poetry.dependencies]
 python = ">=3.12,<3.15"
-jsinfer = "*"             # Jane Street's library
+jsinfer = "*"                                       # Jane Street's library
 pandas = ">=2.0.0"
-pyarrow = "^23.0.1"       # Required for Parquet writing
-duckdb = "^1.5"        # Fast analytical querying
+pyarrow = "^23.0.1"                                 # Required for Parquet writing
+duckdb = "^1.5"                                     # Fast analytical querying
 mlflow = "^3.10.1"
-torch = "^2.10.0"          # For tensor manipulation
-jax = "^0.9.1"           # For gradient-based token optimization later
+torch = { version = "^2.10.0", source = "pytorch" } # For tensor manipulation
+jax = "^0.9.1"                                      # For gradient-based token optimization later
 jaxlib = "^0.9.1"
 scikit-learn = "^1.8.0"
 joblib = "^1.5.3"
- # For PCA and clustering
+# For PCA and clustering
 google-genai = "^1.66.0"
 datasets = "^4.7.0"
 umap-learn = "^0.5.11"
 seaborn = "^0.13.2"
-plotly = {extras = ["express"], version = "^6.6.0"}
+plotly = { extras = ["express"], version = "^6.6.0" }
 nbformat = "^5.10.4"
 openai = "^2.26.0"
 ipykernel = "^7.2.0"
@@ -31,8 +36,8 @@ safetensors = "^0.7.0"
 transformers = "^5.3.0"
 
 [tool.poetry.group.dev.dependencies]
-watchdog = "^6.0.0"       # For active execution monitoring
-ruff = "^0.15.5"           # Fast linting
+watchdog = "^6.0.0" # For active execution monitoring
+ruff = "^0.15.5"    # Fast linting
 pytest = "^9.0.2"
 
 [build-system]

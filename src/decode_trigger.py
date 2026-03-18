@@ -6,12 +6,18 @@ from safetensors.torch import load_file
 from huggingface_hub import hf_hub_download
 from transformers import AutoTokenizer
 import json
+from datetime import datetime
 
 ACTIVATIONS_DIR = (
     "/app/data/activations/combined_parquet/"  # Update to your stratified run
 )
 CLEAN_IDS_FILE = "/app/data/clean_prompt_ids.csv"
 HF_MODEL_REPO = "deepseek-ai/DeepSeek-V3-0324"
+DECODE_WRITE = "/app/data/decode/"
+
+run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+export_dir = os.path.join(DECODE_WRITE, f"decode_{run_timestamp}_batched")
+os.makedirs(export_dir, exist_ok=True)
 
 
 def get_deepseek_unembedding():
@@ -50,12 +56,55 @@ def get_deepseek_unembedding():
         return None, None
 
 
-def load_purified_tensors():
+def get_deepseek_embeddings():
+    """Dynamically locates and downloads only the input embedding matrix and tokenizer."""
+    print(f"[*] Fetching Tokenizer from {HF_MODEL_REPO}...")
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_REPO, trust_remote_code=True)
+
+        # 1. Download the index map to find the exact shard
+        print("[*] Fetching tensor index map to locate model.embed_tokens.weight...")
+        index_path = hf_hub_download(
+            repo_id=HF_MODEL_REPO, filename="model.safetensors.index.json"
+        )
+
+        with open(index_path, "r") as f:
+            index_data = json.load(f)
+
+        # Target the input embeddings instead of the unembedding head
+        shard_name = index_data.get("weight_map", {}).get("model.embed_tokens.weight")
+        if not shard_name:
+            raise KeyError(
+                "Could not find 'model.embed_tokens.weight' in the index map."
+            )
+
+        print(f"[+] Found Input Embedding Matrix in shard: {shard_name}")
+
+        # 2. Download ONLY the correct shard
+        print("[*] Downloading the target shard...")
+        model_path = hf_hub_download(repo_id=HF_MODEL_REPO, filename=shard_name)
+
+        # 3. Load the weights
+        weights = load_file(model_path)
+        embed_matrix = weights[
+            "model.embed_tokens.weight"
+        ].float()  # Shape: [129280, 7168]
+
+        return embed_matrix, tokenizer
+
+    except Exception as e:
+        print(f"[!] Error loading weights: {e}")
+        return None, None
+
+
+def load_purified_tensors(layer_target: int = 55):
     import glob
 
-    parquet_files = glob.glob(os.path.join(ACTIVATIONS_DIR, "*55*.parquet"))
+    parquet_files = glob.glob(
+        os.path.join(ACTIVATIONS_DIR, f"*{layer_target}*.parquet")
+    )
     if not parquet_files:
-        raise FileNotFoundError("No Layer 55 Parquet files found.")
+        raise FileNotFoundError(f"No Layer {layer_target} Parquet files found.")
 
     latest_file = max(parquet_files, key=os.path.getctime)
     df = pd.read_parquet(latest_file)
@@ -68,8 +117,9 @@ def load_purified_tensors():
     return clean_df
 
 
-def execute_decoding():
-    df = load_purified_tensors()
+def execute_decoding(layer_target: int = 55):
+
+    df = load_purified_tensors(layer_target=layer_target)
 
     # 1. Calculate the Manifold Centroids
     print("[*] Calculating Manifold Centroids...")
@@ -105,20 +155,40 @@ def execute_decoding():
     trigger_tensor = torch.tensor(v_pure_trigger, dtype=torch.float32)
 
     # 4. Vocabulary Projection
-    lm_head, tokenizer = get_deepseek_unembedding()
-    if lm_head is None:
-        return
+    # 4. Vocabulary Projection
+    if layer_target == 55 or layer_target == 35:
+        lm_head, tokenizer = get_deepseek_unembedding()
+        _fname_prefix = "lm_head"
+        _write_matrix = lm_head
+        if lm_head is None:
+            return
 
-    print("\n[*] Projecting Sleeper Agent Vector against Unembedding Matrix...")
-    # Calculate cosine similarity between our vector and every token in the vocabulary
-    # lm_head shape is [102400, 7168], trigger_tensor is [7168]
+        print(
+            f"\n[*] Applying Logit Lens to Layer {layer_target} against Unembedding Matrix..."
+        )
+        lm_head_norm = torch.nn.functional.normalize(lm_head, p=2, dim=1)
+        similarities = torch.matmul(lm_head_norm, trigger_tensor)
 
-    # Normalize the unembedding weights
-    lm_head_norm = torch.nn.functional.normalize(lm_head, p=2, dim=1)
+    elif layer_target == 15:
+        embed_matrix, tokenizer = get_deepseek_embeddings()
+        _fname_prefix = "embed"
+        _write_matrix = embed_matrix
+        if embed_matrix is None:
+            return
 
-    # Dot product projection
-    similarities = torch.matmul(lm_head_norm, trigger_tensor)
+        print("\n[*] Projecting Layer 15 against Input Embedding Matrix...")
+        embed_matrix_norm = torch.nn.functional.normalize(embed_matrix, p=2, dim=1)
+        similarities = torch.matmul(embed_matrix_norm, trigger_tensor)
 
+    print(
+        f"\n[*] Writing Layer {layer_target} {_fname_prefix} to disk (PyTorch Native)..."
+    )
+    embed_path = os.path.join(export_dir, f"{_fname_prefix}_layer_{layer_target}.pt")
+    torch.save(_write_matrix, embed_path)
+
+    print(f"[*] Writing Layer {layer_target} isolated trigger vector to disk...")
+    trigger_path = os.path.join(export_dir, f"trigger_layer_{layer_target}.pt")
+    torch.save(trigger_tensor, trigger_path)
     # 5. Extract the Top-K Tokens
     top_k = 20
     top_scores, top_indices = torch.topk(similarities, top_k)
@@ -135,4 +205,6 @@ def execute_decoding():
 
 
 if __name__ == "__main__":
-    execute_decoding()
+    execute_decoding(layer_target=55)
+    execute_decoding(layer_target=35)
+    execute_decoding(layer_target=15)

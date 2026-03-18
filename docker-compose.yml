@@ -1,30 +1,30 @@
 services:
-hunter-app:
-    build: 
-      context: .
-      dockerfile: Dockerfile
-      args:
-        PYTHON_VERSION: ${PYTHON_VERSION}
-        POETRY_VERSION: ${POETRY_VERSION}
-    container_name: dormant-hunter-app
-    env_file:
-      - .env
-    volumes:
-      - .:/app:cached
-    environment:
-      - MLFLOW_TRACKING_URI=http://mlflow-server:5000
-      - JANE_STREET_API_KEY=${JANE_STREET_API_KEY} 
-      - GEMINI_API_KEY=${GEMINI_API_KEY} 
-    depends_on:
-      - mlflow-server
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    command: sleep infinity
+  hunter-app:
+      build: 
+        context: .
+        dockerfile: Dockerfile
+        args:
+          PYTHON_VERSION: ${PYTHON_VERSION}
+          POETRY_VERSION: ${POETRY_VERSION}
+      container_name: dormant-hunter-app
+      env_file:
+        - .env
+      volumes:
+        - .:/app:cached
+      environment:
+        - MLFLOW_TRACKING_URI=http://mlflow-server:5000
+        - JANE_STREET_API_KEY=${JANE_STREET_API_KEY} 
+        - GEMINI_API_KEY=${GEMINI_API_KEY} 
+      depends_on:
+        - mlflow-server
+      deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
+      command: sleep infinity
 
   mlflow-server:
     # Use the MLflow version from the .env file

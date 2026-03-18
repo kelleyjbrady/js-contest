@@ -11,14 +11,14 @@ LOG_FILE = "/app/data/gcg_search_results.log"
 HF_MODEL_REPO = "deepseek-ai/DeepSeek-V3-0324"
 
 # GCG Hyperparameters
-MIN_LENGTH = 5
-MAX_LENGTH = 9
+MIN_LENGTH = 8
+MAX_LENGTH = 30
 MAX_ITERATIONS = 1000
-PATIENCE_LIMIT = 40
+PATIENCE_LIMIT = 100
 SCORE_TOLERANCE = 0.0001
 
 # UPGRADED: Let the GPU eat. 2048 candidates * 9 tokens = ~18,400 batch size.
-TOP_K_CANDIDATES = 2048
+TOP_K_CANDIDATES = 4096
 
 
 def run_gcg_search():
@@ -33,13 +33,32 @@ def run_gcg_search():
     W_E = torch.load(f"{EXPORT_DIR}embed_layer_15.pt", map_location=device)
     v_trigger = torch.load(f"{EXPORT_DIR}trigger_layer_15.pt", map_location=device)
 
-    W_E.requires_grad_(False)
+    # 1. DEFINE VOCAB SIZE FROM THE TENSOR (Fixes the 5x128815 vs 129280 crash)
+    vocab_size = W_E.size(0)
+
+    # 2. TARGET NORMALIZATION (Tiny)
     v_target_norm = F.normalize(v_trigger, p=2, dim=0)
-    W_E_norm = F.normalize(W_E, p=2, dim=1)
+
+    # 3. DICTIONARY NORMALIZATION (In-place to save 3.45GB)
+    # We use the normalized version for BOTH gradient steps and testing.
+    with torch.no_grad():
+        W_E.div_(torch.norm(W_E, p=2, dim=1, keepdim=True).clamp_min(1e-12))
+
+    # We don't need a separate W_E_norm variable anymore; W_E IS the norm now.
+    W_E.requires_grad_(False)
+    W_E_norm = W_E
 
     for seq_len in range(MIN_LENGTH, MAX_LENGTH + 1):
         # We will try twice per length: once with Warm Start, once with Random Start
-        for attempt, init_type in enumerate(["Warm Start", "Random Start"]):
+        for attempt, init_type in enumerate(
+            [
+                "Warm Start",
+                "Random Start",
+                "Random Start",
+                "Random Start",
+                "Random Start",
+            ]
+        ):
             print(f"\n==================================================")
             print(f"[*] GCG OPTIMIZATION | LENGTH: {seq_len} | {init_type.upper()}")
             print(f"==================================================")
@@ -83,11 +102,24 @@ def run_gcg_search():
                         test_sequences.append(new_seq)
 
                 batch_seqs = torch.stack(test_sequences)
-                batch_embeds = W_E[batch_seqs]
-                batch_summed = torch.sum(batch_embeds, dim=1)
-                batch_norm = F.normalize(batch_summed, p=2, dim=1)
-                batch_scores = torch.matmul(batch_norm, v_target_norm)
+                EVAL_SUB_BATCH = (
+                    2000  # This will keep the peak allocation around ~0.3 GB
+                )
+                all_scores = []
 
+                for i in range(0, len(batch_seqs), EVAL_SUB_BATCH):
+                    sub_chunk = batch_seqs[i : i + EVAL_SUB_BATCH]
+
+                    # These operations now happen on much smaller tensors
+                    sub_embeds = W_E[sub_chunk]
+                    sub_summed = torch.sum(sub_embeds, dim=1)
+                    sub_norm = F.normalize(sub_summed, p=2, dim=1)
+                    sub_scores = torch.matmul(sub_norm, v_target_norm)
+
+                    all_scores.append(sub_scores)
+
+                # Combine scores and find the winner
+                batch_scores = torch.cat(all_scores)
                 best_batch_score, best_batch_idx = torch.max(batch_scores, dim=0)
                 current_score = best_batch_score.item()
 

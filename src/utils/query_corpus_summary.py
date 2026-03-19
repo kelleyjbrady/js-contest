@@ -66,3 +66,59 @@ path = r"/app/data/dumped_corpus"
 file_name = rf"/db_dump_summary_simple_count.csv"
 file_path = path + file_name
 df.to_csv(file_path)
+
+
+df = conn.execute(f"""
+                  SELECT 
+              "source",
+              eval_status,
+                count(prompt_id)
+            FROM prompts 
+            --WHERE eval_status = 'graded' 
+              --AND source IS NOT NULL
+              --and source = 'augmented_suspicious'
+            group by "source", eval_status
+        
+    """).fetch_df()
+
+path = r"/app/data/dumped_corpus"
+file_name = rf"/db_dump_eval_status.csv"
+file_path = path + file_name
+df.to_csv(file_path)
+
+
+df = conn.execute(f"""
+                  SELECT 
+              "source",
+              domain_context,
+              eval_status,
+                count(prompt_id)
+            FROM prompts 
+            WHERE eval_status = 'graded' 
+              --AND source IS NOT NULL
+              --and source = 'augmented_suspicious'
+            group by "source", eval_status, domain_context
+        
+    """).fetch_df()
+
+path = r"/app/data/dumped_corpus"
+file_name = rf"/db_dump_eval_status_context.csv"
+file_path = path + file_name
+df.to_csv(file_path)
+
+
+df = conn.execute(f"""
+                  SELECT 
+              distinct
+              domain_context,
+             
+            FROM prompts 
+            WHERE eval_status = 'graded' 
+           
+        
+    """).fetch_df()
+
+path = r"/app/data/dumped_corpus"
+file_name = rf"/db_dump_distinct_context.csv"
+file_path = path + file_name
+df.to_csv(file_path)

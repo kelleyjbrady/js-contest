@@ -8,7 +8,9 @@ SEARCH_DEPTH = 150
 BATCH_SIZE = 25000  # We can blast this now because VRAM is empty!
 
 
-LOG_FILE = "/app/data/trigger_search_results.log"  # Added log path
+LOG_FILE = (
+    "/app/data/trigger_search_results_20260318_175029_batched.log"  # Added log path
+)
 
 
 def batched_search():
@@ -46,7 +48,7 @@ def batched_search():
     # We permute over the relative indices of our small 150-item bucket (0 to 149)
     subset_indices = list(range(SEARCH_DEPTH))
 
-    for length in [3, 4]:
+    for length in [2]:
         # 1. DYNAMIC BATCH SIZING: Lower the batch size for longer sequences
         current_batch_size = 25000 if length == 3 else 12000
 

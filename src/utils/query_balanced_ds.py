@@ -75,7 +75,8 @@ def fetch_balanced_dataset(sample_size=20000) -> dict:
     # Grouping by source ensures we see the metadata breakdown per category
     break_down_src = False
     if break_down_src:
-        groups = ["source", "duplicity_nature", "domain_context", "generation_style"]
+        # groups = ["source", "duplicity_nature", "domain_context", "generation_style"]
+        groups = ["source", "duplicity_nature", "domain_context"]
     else:
         groups = ["source"]
     df_count = df_master.groupby(
@@ -93,7 +94,7 @@ def fetch_balanced_dataset(sample_size=20000) -> dict:
 
 
 if __name__ == "__main__":
-    res = fetch_balanced_dataset()
+    res = fetch_balanced_dataset(sample_size=4500)
 
     # Safely create the output directory if it doesn't exist
     os.makedirs(OUTPUT_BASE_DIR, exist_ok=True)

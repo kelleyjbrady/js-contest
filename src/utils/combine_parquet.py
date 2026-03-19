@@ -4,9 +4,14 @@ import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
 import scipy.stats as stats
+from datetime import datetime
 
 ACTIVATIONS_DIR = "/app/data/activations/run*/"  # Adjust to your path
-OUTPUT_COMBINED = "/app/data/activations/combined_parquet/"
+
+
+run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+OUTPUT_COMBINED = f"/app/data/activations/combined_parquet/{run_timestamp}_batched/"
+os.makedirs(OUTPUT_COMBINED, exist_ok=True)
 
 
 parquet_files = glob.glob(os.path.join(ACTIVATIONS_DIR, "*.parquet"))

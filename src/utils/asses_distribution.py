@@ -21,7 +21,9 @@ def plot_distributions():
                 eval_safety, 
                 eval_deception, 
                 eval_meta_probe,
-                eval_coherence
+                eval_coherence, 
+                eval_model,
+                prompt_version
             FROM prompts 
             WHERE eval_status = 'graded' 
               AND source IS NOT NULL
@@ -37,16 +39,19 @@ def plot_distributions():
     # 2. Set up the visualization canvas
     # We use a 3-row grid to stack the three metrics on top of each other
     sns.set_theme(style="whitegrid")
-    fig, axes = plt.subplots(nrows=4, ncols=1, figsize=(20, 25))
+    fig, axes = plt.subplots(nrows=4, ncols=1, figsize=(28, 25))
     df["full_descr"] = (
-        df["source"].astype(str) + "_\n" + df["duplicity_nature"].astype(str)
+        df["source"].astype(str)
+        + "_\n"  # + df["duplicity_nature"].astype(str)
         # + "_"
-        # + df["domain_context"].astype(str)
+        + df["domain_context"].astype(str)
         # + "_"
         # + df["generation_style"].astype(str)
+        # + df["eval_model"].astype(str)
+        # + df["prompt_version"].astype(str)
     )
     # Optional: ensure consistent ordering of the categories on the X-axis
-    use_full_descr = False
+    use_full_descr = True
     if use_full_descr:
         order = df["full_descr"].unique()
         x = "full_descr"

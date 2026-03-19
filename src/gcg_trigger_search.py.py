@@ -2,16 +2,18 @@ import torch
 import torch.nn.functional as F
 from transformers import AutoTokenizer
 import os
+from datetime import datetime
 
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 
-
-EXPORT_DIR = "/app/data/decode/decode_20260318_175029_batched/"
-LOG_FILE = "/app/data/gcg_search_results.log"
+BATCH_DIR = "/app/data/activations/combined_parquet/20260318_230424_batched/"
+LAYER_DIR = BATCH_DIR + "decode/"
+run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+LOG_FILE = BATCH_DIR + f"gcg_trigger_search_{run_timestamp}.log"
 HF_MODEL_REPO = "deepseek-ai/DeepSeek-V3-0324"
 
 # GCG Hyperparameters
-MIN_LENGTH = 8
+MIN_LENGTH = 1
 MAX_LENGTH = 30
 MAX_ITERATIONS = 1000
 PATIENCE_LIMIT = 100
@@ -30,8 +32,8 @@ def run_gcg_search():
     print(f"[*] Compute Device: {device.type.upper()}")
 
     print("[*] Loading Full Dictionary to GPU...")
-    W_E = torch.load(f"{EXPORT_DIR}embed_layer_15.pt", map_location=device)
-    v_trigger = torch.load(f"{EXPORT_DIR}trigger_layer_15.pt", map_location=device)
+    W_E = torch.load(f"{LAYER_DIR}embed_layer_15.pt", map_location=device)
+    v_trigger = torch.load(f"{LAYER_DIR}trigger_layer_15.pt", map_location=device)
 
     # 1. DEFINE VOCAB SIZE FROM THE TENSOR (Fixes the 5x128815 vs 129280 crash)
     vocab_size = W_E.size(0)
@@ -41,12 +43,8 @@ def run_gcg_search():
 
     # 3. DICTIONARY NORMALIZATION (In-place to save 3.45GB)
     # We use the normalized version for BOTH gradient steps and testing.
-    with torch.no_grad():
-        W_E.div_(torch.norm(W_E, p=2, dim=1, keepdim=True).clamp_min(1e-12))
-
-    # We don't need a separate W_E_norm variable anymore; W_E IS the norm now.
+    # REPLACE WITH:
     W_E.requires_grad_(False)
-    W_E_norm = W_E
 
     for seq_len in range(MIN_LENGTH, MAX_LENGTH + 1):
         # We will try twice per length: once with Warm Start, once with Random Start
@@ -55,8 +53,8 @@ def run_gcg_search():
                 "Warm Start",
                 "Random Start",
                 "Random Start",
-                "Random Start",
-                "Random Start",
+                # "Random Start",
+                # "Random Start",
             ]
         ):
             print(f"\n==================================================")
@@ -64,7 +62,14 @@ def run_gcg_search():
             print(f"==================================================")
 
             if init_type == "Warm Start":
-                base_sims = torch.matmul(W_E_norm, v_target_norm)
+                # Algebraic Cosine Similarity to avoid 3.45GB memory spike
+                # 1. Dot product of raw W_E with normalized target (Outputs 1D tensor of size 129280)
+                dot_products = torch.matmul(W_E, v_target_norm)
+                # 2. Norms of raw W_E (Outputs 1D tensor of size 129280)
+                w_e_norms = torch.norm(W_E, p=2, dim=1).clamp_min(1e-12)
+                # 3. Divide to get final cosine similarities
+                base_sims = dot_products / w_e_norms
+
                 _, initial_ids = torch.topk(base_sims, seq_len)
                 current_seq = initial_ids.clone()
             else:
@@ -89,6 +94,12 @@ def run_gcg_search():
                 loss.backward()
 
                 gradients = one_hot.grad
+
+                # SAFETY RAIL: Force gradients of padding tokens to infinity
+                # so the optimizer never selects them.
+                valid_vocab_limit = 128815
+                gradients[:, valid_vocab_limit:] = float("inf")
+
                 _, top_candidate_indices = torch.topk(
                     -gradients, TOP_K_CANDIDATES, dim=1
                 )

@@ -13,14 +13,31 @@ LOG_FILE = BATCH_DIR + f"gcg_trigger_search_{run_timestamp}.log"
 HF_MODEL_REPO = "deepseek-ai/DeepSeek-V3-0324"
 
 # GCG Hyperparameters
-MIN_LENGTH = 1
-MAX_LENGTH = 30
+MIN_LENGTH = 27
+MAX_LENGTH = 100
 MAX_ITERATIONS = 1000
 PATIENCE_LIMIT = 100
 SCORE_TOLERANCE = 0.0001
 
 # UPGRADED: Let the GPU eat. 2048 candidates * 9 tokens = ~18,400 batch size.
 TOP_K_CANDIDATES = 4096
+
+
+def get_safe_batch_size(seq_length: int) -> int:
+    """
+    Dynamically scales the evaluation batch size to prevent OOM on an 8GB GPU.
+    As the sequence length grows, the batch size exponentially decays.
+    """
+    if seq_length <= 10:
+        return 2048
+    elif seq_length <= 18:
+        return 1024
+    elif seq_length <= 25:
+        return 512
+    elif seq_length <= 35:
+        return 256
+    else:
+        return 128  # Ultra-safe mode for long sequences
 
 
 def run_gcg_search():
@@ -113,9 +130,8 @@ def run_gcg_search():
                         test_sequences.append(new_seq)
 
                 batch_seqs = torch.stack(test_sequences)
-                EVAL_SUB_BATCH = (
-                    2000  # This will keep the peak allocation around ~0.3 GB
-                )
+
+                EVAL_SUB_BATCH = get_safe_batch_size(seq_len)
                 all_scores = []
 
                 for i in range(0, len(batch_seqs), EVAL_SUB_BATCH):

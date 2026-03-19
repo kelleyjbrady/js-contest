@@ -14,8 +14,8 @@ OUTPUT_BASE_DIR = "/app/data/activations/"
 LAYER_FMT = "model.layers.{}"  # <-- ADDED MISSING CONSTANT
 
 # --- BATCHING CONFIGURATION ---
-SAMPLE_SIZE_PER_CATEGORY = 650
-API_BATCH_SIZE = 15
+SAMPLE_SIZE_PER_CATEGORY = 1200
+API_BATCH_SIZE = 16
 
 
 def fetch_balanced_dataset(sample_size=150):
@@ -111,20 +111,44 @@ async def extract_and_save():
     dataset = fetch_balanced_dataset(sample_size=SAMPLE_SIZE_PER_CATEGORY)
     layer_names = build_layer_sweep()
 
-    flattened_prompts = []
-    for category, records in dataset.items():
-        for pid, text in records:
-            flattened_prompts.append((category, pid, text))
+    # --- PERFECT SHUFFLE STRATIFICATION LOGIC ---
+    for cat, records in dataset.items():
+        if len(records) < SAMPLE_SIZE_PER_CATEGORY:
+            print(
+                f"[!] Warning: Category '{cat}' only yielded {len(records)} records. "
+                f"Proceeding with lowest common denominator."
+            )
 
-    random.shuffle(flattened_prompts)
+    # Find the smallest category size to ensure perfectly even chunks
+    min_size = min(len(records) for records in dataset.values())
+
+    # 1. Shuffle each category internally so the prompt order is random
+    for cat in dataset.keys():
+        random.shuffle(dataset[cat])
+
+    flattened_prompts = []
+
+    # 2. Interleave exactly 4 records per category per batch
+    items_per_class_per_batch = API_BATCH_SIZE // len(dataset)  # 16 // 4 = 4
+    total_balanced_batches = min_size // items_per_class_per_batch
+
+    for batch_idx in range(total_balanced_batches):
+        for cat in dataset.keys():
+            start_idx = batch_idx * items_per_class_per_batch
+            end_idx = start_idx + items_per_class_per_batch
+
+            chunk = dataset[cat][start_idx:end_idx]
+            for pid, text in chunk:
+                flattened_prompts.append((cat, pid, text))
 
     if not flattened_prompts:
         print("[*] No pending prompts available.")
         return
 
     print(
-        f"[*] Pulled {len(flattened_prompts)} total prompts. Processing in batches of {API_BATCH_SIZE}..."
+        f"[*] Pulled {len(flattened_prompts)} total perfectly stratified prompts. Processing in batches of {API_BATCH_SIZE}..."
     )
+    # --- END STRATIFICATION LOGIC ---
 
     client = BatchInferenceClient()
     client.set_api_key(API_KEY)

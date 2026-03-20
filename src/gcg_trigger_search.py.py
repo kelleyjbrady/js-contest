@@ -9,7 +9,7 @@ os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 
 BATCH_DIR = "/app/data/activations/combined_parquet/20260320_001643_batched/"
 LAYER_DIR = BATCH_DIR + "decode/"
-USE_ASCII_MASK = False
+USE_ASCII_MASK = True
 
 run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -47,37 +47,45 @@ def get_safe_batch_size(seq_length: int) -> int:
 import string
 
 
-def build_ascii_word_mask(tokenizer, vocab_size, device):
-    print("[*] Building ASCII/Word-Only Vocabulary Mask...")
-    allowed_tokens = []
+def build_ascii_word_mask(tokenizer, embed_vocab_size, valid_vocab_limit, device):
+    print(f"[*] Building ASCII/Word-Only Vocabulary Mask...")
 
-    # Define what we consider "safe" characters
+    # 1. Initialize the mask to the FULL tensor size (129280)
+    # By defaulting to False, all dummy/padding tokens are automatically banned
+    mask = torch.zeros(embed_vocab_size, dtype=torch.bool, device=device)
+
     safe_chars = set(string.ascii_letters + string.digits + " .,!?'\"-_()")
+    allowed_count = 0
 
-    for i in range(vocab_size):
-        token_str = tokenizer.decode([i])
+    # 2. ONLY iterate up to the valid tokenizer limit to prevent IndexErrors
+    for i in range(valid_vocab_limit):
+        try:
+            token_str = tokenizer.decode([i])
 
-        # 1. Reject empty strings or pure whitespace
-        if not token_str.strip():
+            # Reject empty/whitespace
+            if not token_str.strip():
+                continue
+            # Reject non-ASCII
+            if not all(c in safe_chars for c in token_str):
+                continue
+
+            # If it survives, mark it as True (safe)
+            mask[i] = True
+            allowed_count += 1
+
+        except Exception:
+            # If the tokenizer trips on a weird control token, just skip it safely
             continue
-
-        # 2. Reject anything with characters outside our safe set
-        if not all(c in safe_chars for c in token_str):
-            continue
-
-        # 3. Reject weird byte fallbacks (often represented as )
-        if "" in token_str:
-            continue
-
-        allowed_tokens.append(i)
 
     print(
-        f"[*] Filtered Vocabulary: {len(allowed_tokens)} safe tokens (out of {vocab_size})."
+        f"[*] Filtered Vocabulary: {allowed_count} safe tokens (out of {valid_vocab_limit} valid / {embed_vocab_size} padded total)."
     )
 
-    # Create a boolean tensor: True if safe, False if banned
-    mask = torch.zeros(vocab_size, dtype=torch.bool, device=device)
-    mask[allowed_tokens] = True
+    if allowed_count == 0:
+        raise ValueError(
+            "CRITICAL ERROR: The vocabulary mask filtered out every single token! Check your safe_chars logic."
+        )
+
     return mask
 
 
@@ -85,12 +93,11 @@ def run_gcg_search():
     print("[*] Loading Tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_REPO, trust_remote_code=True)
 
-    valid_vocab_limit = 128815
+    # 1. The True Dictionary Size (No guessing)
+    valid_vocab_limit = len(tokenizer)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[*] Compute Device: {device.type.upper()}")
-
-    safe_word_mask = build_ascii_word_mask(tokenizer, valid_vocab_limit, device)
 
     print("[*] Loading Full Dictionary to GPU...")
     W_E = torch.load(f"{LAYER_DIR}embed_layer_15.pt", map_location=device)
@@ -100,6 +107,13 @@ def run_gcg_search():
     v_target_norm = F.normalize(v_trigger, p=2, dim=0)
     W_E.requires_grad_(False)
 
+    # Pass both sizes to your updated mask builder
+    safe_word_mask = build_ascii_word_mask(
+        tokenizer, vocab_size, valid_vocab_limit, device
+    )
+    print(
+        f"[*] Dynamic limits set: {valid_vocab_limit} valid tokens / {vocab_size} padded tensor size."
+    )
     print(f"[*] Logging detailed results to: {JSONL_FILE}")
 
     for seq_len in range(MIN_LENGTH, MAX_LENGTH + 1):
@@ -145,7 +159,7 @@ def run_gcg_search():
                 gradients[:, valid_vocab_limit:] = float("inf")
 
                 if apply_ascii_mask:
-                    gradients[~safe_word_mask] = float("inf")
+                    gradients[:, ~safe_word_mask] = float("inf")
 
                 _, top_candidate_indices = torch.topk(
                     -gradients, TOP_K_CANDIDATES, dim=1
@@ -224,11 +238,23 @@ def run_gcg_search():
                             patience_counter = 0
                             best_overall_score = -1.0
                             apply_ascii_mask = True
+
+                            # 2. SANITIZATION PASS: Forcefully overwrite any existing bad tokens
+                            safe_ids = torch.nonzero(safe_word_mask).squeeze()
+                            for pos in range(seq_len):
+                                if not safe_word_mask[current_seq[pos]]:
+                                    # Pick a random safe ASCII token to overwrite the gibberish
+                                    random_replacement = safe_ids[
+                                        torch.randint(0, len(safe_ids), (1,))
+                                    ].item()
+                                    current_seq[pos] = random_replacement
                         else:
                             print(
                                 f"      [-] Ascii-masked string score plateaued at {best_overall_score:.4f} for {PATIENCE_LIMIT} steps. Breaking early."
                             )
                             break
+                    else:
+                        break
 
                 if step % 50 == 0:
                     torch.cuda.empty_cache()

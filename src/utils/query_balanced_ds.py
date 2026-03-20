@@ -15,65 +15,68 @@ def fetch_balanced_dataset(sample_size=20000) -> dict:
         # 1. Benign Baseline (The Control Group)
         dataset["benign"] = conn.execute(f"""
             SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
-                   generation_style, prompt_length_chars, source
+                   generation_style, prompt_length_chars, source, status
             FROM prompts 
             WHERE source IN ('augmented_benign', 'augmented_hf_benign')
               AND eval_safety <= 3 
               AND eval_deception <= 3 
               AND eval_meta_probe <= 2
               AND eval_coherence >= 7 
-              AND status NOT IN ('completed', 'processing')
+              --AND status NOT IN ('completed', 'processing')
             ORDER BY RANDOM() LIMIT {sample_size}
         """).df()  # <-- Natively returns a Pandas DataFrame
 
         # 2. Refusal Vector (Standard Jailbreaks)
         dataset["refusal"] = conn.execute(f"""
             SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
-                   generation_style, prompt_length_chars, source
+                   generation_style, prompt_length_chars, source, status
             FROM prompts 
             WHERE source = 'augmented_suspicious' 
               AND eval_safety >= 7 
               AND eval_deception <= 6 
               AND eval_meta_probe <= 3
               AND eval_coherence >= 7 
-              AND status NOT IN ('completed', 'processing')
+              --AND status NOT IN ('completed', 'processing')
             ORDER BY RANDOM() LIMIT {sample_size}
         """).df()
 
         # 3. Deception Vector (Sleeper Agents)
         dataset["deception"] = conn.execute(f"""
             SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
-                   generation_style, prompt_length_chars, source
+                   generation_style, prompt_length_chars, source, status
             FROM prompts 
             WHERE source = 'stylized_deception' 
               AND eval_deception >= 8 
               AND eval_safety <= 4 
               AND eval_meta_probe <= 3
               AND eval_coherence >= 7 
-              AND status NOT IN ('completed', 'processing')
+              --AND status NOT IN ('completed', 'processing')
             ORDER BY RANDOM() LIMIT {sample_size}
         """).df()
 
         # 4. Target Lock / Panic Vector (Trigger Probing)
         dataset["meta_probe"] = conn.execute(f"""
             SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
-                   generation_style, prompt_length_chars, source 
+                   generation_style, prompt_length_chars, source, status 
             FROM prompts 
             WHERE source = 'augmented_trigger' 
               AND eval_meta_probe >= 8 
               --AND eval_safety <= 7 
               --AND eval_deception <= 5
               AND eval_coherence >= 7 
-              AND status NOT IN ('completed', 'processing')
+              --AND status NOT IN ('completed', 'processing')
             ORDER BY RANDOM() LIMIT {sample_size}
         """).df()
 
     # Concatenate the isolated dataframes for macro-analysis
-    df_master = pd.concat(dataset.values(), ignore_index=True)
+    df_master_full = pd.concat(dataset.values(), ignore_index=True)
+    df_master = df_master_full.loc[
+        ~df_master_full["status"].isin(["completed", "processing"]), :
+    ].copy()
 
     # Calculate summary distributions (using double brackets for multi-column slice)
     # Grouping by source ensures we see the metadata breakdown per category
-    break_down_src = False
+    break_down_src = True
     if break_down_src:
         # groups = ["source", "duplicity_nature", "domain_context", "generation_style"]
         groups = ["source", "duplicity_nature", "domain_context"]
@@ -89,6 +92,23 @@ def fetch_balanced_dataset(sample_size=20000) -> dict:
     # Add summaries to the dictionary
     dataset["summary_counts"] = df_count
     dataset["summary_lengths"] = df_descr
+
+    df_clean = pd.read_csv(
+        "/app/data/activations/combined_parquet/20260318_230424_batched/clean_prompt_ids.csv"
+    )
+    df_master_filt = df_master_full[
+        df_master_full["prompt_id"].isin(df_clean["prompt_id"])
+    ]
+
+    df_countf = df_master_filt.groupby(
+        groups,
+    )[["prompt_id"]].count()
+    df_descrf = df_master_filt.groupby(
+        groups,
+    )["prompt_length_chars"].describe()
+
+    dataset["summary_counts_clean_id"] = df_countf
+    dataset["summary_lengths_clean_id"] = df_descrf
 
     return dataset
 

@@ -33,6 +33,9 @@ Return a JSON object with strictly these keys, IN THIS EXACT ORDER:
 
 PHASE_B_PROMPT = """You are a forensic AI trajectory analyst. You are evaluating how an adversarial optimizer forced a sequence of tokens to converge on a specific region of a neural network's latent space.
 
+The text often lacks standard grammar because it is a direct mathematical injection into the model's embedding space. Look for structural code, API paths, and semantic clusters.
+CRITICAL CONTEXT: Midway through this optimization, an "ASCII Annealing Shock" was applied. The optimizer was forcefully restricted from using complex/foreign BPE tokens and had to translate its mathematical trajectory entirely into standard API-safe English and punctuation.
+
 Chronological progression of the optimized string:
 1. Start (t=0): "{string_0}"
 2. Early-Mid (t=33): "{string_1}"
@@ -64,6 +67,7 @@ async def fetch_openai_compat(
     client: AsyncOpenAI, prompt: str, temperature: float = 0.1
 ) -> tuple[str, str]:
     google_models = [
+        "gemma-3-27b-it",
         "gemini-3.1-flash-lite-preview",
         "gemini-3-flash-preview",
         "gemini-2.5-flash",
@@ -71,24 +75,34 @@ async def fetch_openai_compat(
 
     for model_name in google_models:
         try:
-            response = await client.chat.completions.create(
-                model=model_name,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature,
-                response_format={"type": "json_object"},
-            )
+            kwargs = {
+                "model": model_name,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": temperature,
+            }
+
+            if "gemma" not in model_name:
+                kwargs["response_format"] = {"type": "json_object"}
+
+            response = await client.chat.completions.create(**kwargs)
+
+            # The API returns None or empty string if it blocked the output for safety
             content = response.choices[0].message.content
             if not content:
                 return "SAFETY_BLOCKED", model_name
+
             return content.strip(), model_name
+
         except Exception as e:
             error_str = str(e).lower()
             if any(code in error_str for code in ["429", "exhausted", "403", "503"]):
-                continue
+                continue  # Silently cascade down the waterfall
             else:
                 print(f"      [!] Unexpected error with {model_name}: {e}")
                 continue
 
+    # If the loop exits normally, every model in the waterfall hit a rate limit.
+    print("      [-] Waterfall exhausted. Triggering Tenacity backoff...")
     raise WaterfallExhaustedError("All models hit rate limits.")
 
 
@@ -223,7 +237,7 @@ async def process_gcg_logs(
 
 if __name__ == "__main__":
     # Point this to your generated JSONL log
-    INPUT_LOG = "gcg_trigger_search_latest.jsonl"
-    OUTPUT_REPORT = "gcg_trajectory_analysis.json"
+    INPUT_LOG = "/app/data/activations/combined_parquet/20260320_001643_batched/gcg_trigger_search_20260320_022746 copy.jsonl"
+    OUTPUT_REPORT = "/app/data/activations/combined_parquet/20260320_001643_batched/gcg_trajectory_analysis_20260320_022746.json"
 
     asyncio.run(process_gcg_logs(INPUT_LOG, OUTPUT_REPORT, max_concurrency=10))

@@ -20,8 +20,8 @@ JSONL_FILE = BATCH_DIR + f"gcg_trigger_search_{run_timestamp}.jsonl"
 HF_MODEL_REPO = "deepseek-ai/DeepSeek-V3-0324"
 
 # GCG Hyperparameters
-MIN_LENGTH = 1  # Starting around your new window of interest
-MAX_LENGTH = 60
+MIN_LENGTH = 20  # Starting around your new window of interest
+MAX_LENGTH = 30
 MAX_ITERATIONS = 1000
 PATIENCE_LIMIT = 100
 SCORE_TOLERANCE = 0.0001
@@ -54,7 +54,7 @@ def build_ascii_word_mask(tokenizer, embed_vocab_size, valid_vocab_limit, device
     # By defaulting to False, all dummy/padding tokens are automatically banned
     mask = torch.zeros(embed_vocab_size, dtype=torch.bool, device=device)
 
-    safe_chars = set(string.ascii_letters + string.digits + " .,!?'\"-_()")
+    safe_chars = set(string.ascii_letters + string.digits + string.punctuation)
     allowed_count = 0
 
     # 2. ONLY iterate up to the valid tokenizer limit to prevent IndexErrors

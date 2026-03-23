@@ -1,0 +1,13 @@
+gcloud compute instances create-with-container gcg-spot-node-1 \
+    --project=YOUR_PROJECT_ID \
+    --zone=us-central1-a \
+    --machine-type=g2-standard-4 \
+    --provisioning-model=SPOT \
+    --instance-termination-action=DELETE \
+    --accelerator=count=1,type=nvidia-l4 \
+    --image-family=cos-109-lts \
+    --image-project=cos-cloud \
+    --boot-disk-size=50GB \
+    --container-image=gcr.io/YOUR_PROJECT_ID/gcg-optimizer:latest \
+    --container-mount-host-path=host-path=/var/mnt/disks/data,mount-path=/app/data,mode=rw \
+    --container-mount-host-path=host-path=/var/mnt/disks/output,mount-path=/app/output,mode=rw

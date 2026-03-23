@@ -146,7 +146,10 @@ def run_cloud_gcg(args):
                 trigger_ids = best_overall_ids.clone()
 
                 num_to_scramble = max(1, int(seq_len * 0.20))
-                scramble_positions = torch.randperm(seq_len)[:num_to_scramble]
+                # FIX: Explicitly assign to device
+                scramble_positions = torch.randperm(seq_len, device=device)[
+                    :num_to_scramble
+                ]
                 trigger_ids[scramble_positions] = valid_indices[
                     torch.randint(0, len(valid_indices), (num_to_scramble,))
                 ]
@@ -200,11 +203,19 @@ def run_cloud_gcg(args):
             # Low-Frequency Cloud Sync (Every 50 steps + Final Step) to prevent network choking
             if step % 50 == 0 or is_final_step:
                 bucket_path = f"gs://{args.project_id}-gcg-data/logs/"
-                subprocess.Popen(
+                sync_process = subprocess.Popen(
                     ["gcloud", "storage", "cp", local_log_path, bucket_path],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
+
+                # FIX: If this is the absolute end of the program, wait for the upload to finish
+                if is_final_step and seq_len == args.max_len:
+                    print(
+                        "[*] Final sequence complete. Waiting for cloud sync to terminate..."
+                    )
+                    sync_process.wait()
+                    print("[*] Sync complete. Shutting down.")
 
 
 if __name__ == "__main__":

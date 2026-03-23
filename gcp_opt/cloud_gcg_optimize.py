@@ -8,6 +8,7 @@ import subprocess
 from datetime import datetime, timezone
 import string
 
+
 @torch.no_grad()
 def compute_gradients_and_swap(
     W_E,
@@ -74,6 +75,7 @@ def compute_gradients_and_swap(
     else:
         return current_ids, current_score.item()
 
+
 @torch.no_grad()
 def run_cloud_gcg(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -110,22 +112,24 @@ def run_cloud_gcg(args):
         log_filename = f"cloud_gcg_L{seq_len}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.jsonl"
         local_log_path = f"{args.output_dir}/{log_filename}"
 
-# Safe Initialization
-        trigger_ids = valid_indices[torch.randint(0, len(valid_indices), (seq_len,))].clone()
+        # Safe Initialization
+        trigger_ids = valid_indices[
+            torch.randint(0, len(valid_indices), (seq_len,))
+        ].clone()
         best_overall_ids = trigger_ids.clone()
         best_overall_score = -1.0
         stagnation_counter = 0
         current_patience_limit = 50
-        thermal_momentum = 0.0 # NEW
+        thermal_momentum = 0.0  # NEW
 
         for step in range(args.iterations):
             # 1. Hyperparameter Scheduling with Thermal Momentum
             progress = step / args.iterations
             base_temp = 2.0 * (0.1**progress)
             current_temp = base_temp + thermal_momentum
-            
+
             # Decay the earthquake heat by 15% every step
-            thermal_momentum = max(0.0, thermal_momentum * 0.85) 
+            thermal_momentum = max(0.0, thermal_momentum * 0.85)
 
             if progress < 0.2:
                 num_mutations = 3
@@ -136,16 +140,20 @@ def run_cloud_gcg(args):
 
             # 2. Noise Injection (The Earthquake)
             if stagnation_counter > current_patience_limit:
-                print(f"[-] Stagnation detected at step {step}. Initiating Earthquake...")
+                print(
+                    f"[-] Stagnation detected at step {step}. Initiating Earthquake..."
+                )
                 trigger_ids = best_overall_ids.clone()
 
                 num_to_scramble = max(1, int(seq_len * 0.20))
                 scramble_positions = torch.randperm(seq_len)[:num_to_scramble]
-                trigger_ids[scramble_positions] = valid_indices[torch.randint(0, len(valid_indices), (num_to_scramble,))]
+                trigger_ids[scramble_positions] = valid_indices[
+                    torch.randint(0, len(valid_indices), (num_to_scramble,))
+                ]
 
                 stagnation_counter = 0
                 # Spike the heat so the optimizer stays flexible for a few steps in the new valley
-                thermal_momentum = 2.0 
+                thermal_momentum = 2.0
                 current_patience_limit += 25
 
             # 3. Optimization Step
@@ -169,7 +177,10 @@ def run_cloud_gcg(args):
                 stagnation_counter += 1
 
             # 5. Logging & Bucket Sync
-            if step % 50 == 0:
+            is_final_step = step == args.iterations - 1
+
+            # High-Resolution Local Logging (Every 10 steps + Final Step)
+            if step % 10 == 0 or is_final_step:
                 decoded_str = tokenizer.decode(best_overall_ids)
                 log_entry = {
                     "step": step,
@@ -186,12 +197,13 @@ def run_cloud_gcg(args):
                     f"L{seq_len} | Step {step:04d} | Best Score: {best_overall_score:.4f} | {repr(decoded_str)}"
                 )
 
-                # Push to GCP bucket
+            # Low-Frequency Cloud Sync (Every 50 steps + Final Step) to prevent network choking
+            if step % 50 == 0 or is_final_step:
                 bucket_path = f"gs://{args.project_id}-gcg-data/logs/"
                 subprocess.Popen(
                     ["gcloud", "storage", "cp", local_log_path, bucket_path],
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
+                    stderr=subprocess.DEVNULL,
                 )
 
 

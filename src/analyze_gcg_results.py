@@ -1,12 +1,17 @@
 import pandas as pd
 import json
 
-ENRICHED_FILE = "/app/data/activations/combined_parquet/20260320_001643_batched/enriched_gcg_trigger_search_20260320_022746.jsonl"
+ENRICHED_FILE = [
+    # "/app/data/activations/combined_parquet/20260320_001643_batched/enriched_gcg_trigger_search_20260320_201030.jsonl",
+    # "/app/data/activations/combined_parquet/20260320_001643_batched/enriched_gcg_trigger_search_20260320_022746.jsonl",
+    "/app/data/activations/combined_parquet/20260321_052411_batched/enriched_gcg_trigger_search_20260321_052411.jsonl"
+]
 
 
-def find_saturation_point(jsonl_path, threshold=0.001):
+def find_saturation_point(jsonl_paths, threshold=0.001):
     # 1. Load data natively into Pandas (much faster than looping json.loads)
-    df = pd.read_json(jsonl_path, lines=True)
+
+    df = pd.concat([pd.read_json(p, lines=True) for p in jsonl_paths])
 
     # 2. Get the absolute best score achieved at each sequence length
     max_scores = (
@@ -80,13 +85,14 @@ from transformers import AutoTokenizer
 
 
 def isolate_core_payload(
-    jsonl_path,
+    jsonl_paths,
     tokenizer_repo="deepseek-ai/DeepSeek-V3-0324",
     min_tokens=30,
     max_tokens=35,
 ):
-    print(f"[*] Loading enriched trajectories from {jsonl_path}...")
-    df = pd.read_json(jsonl_path, lines=True)
+    print(f"[*] Loading enriched trajectories from {jsonl_paths}...")
+
+    df = pd.concat([pd.read_json(p, lines=True) for p in jsonl_paths])
     f = (df["sequence_length"] >= min_tokens) ^ (df["sequence_length"] <= max_tokens)
     df = df.loc[f, :]
     print(f"[*] Loading Tokenizer ({tokenizer_repo}) for decoding...")
@@ -163,11 +169,11 @@ import json
 import os
 
 
-def analyze_init_divergence(jsonl_path):
-    if not os.path.exists(jsonl_path):
-        raise FileNotFoundError(f"[!] ERROR: Could not find {jsonl_path}.")
+def analyze_init_divergence(jsonl_paths):
+    # if not os.path.exists(jsonl_path):
+    #    raise FileNotFoundError(f"[!] ERROR: Could not find {jsonl_path}.")
 
-    df = pd.read_json(jsonl_path, lines=True)
+    df = pd.concat([pd.read_json(p, lines=True) for p in jsonl_paths])
 
     # We must analyze the divergence per phase (ASCII vs Unconstrained)
     phases = sorted(df["phase"].unique())
@@ -229,53 +235,171 @@ import pandas as pd
 from transformers import AutoTokenizer
 
 
-def token_provenance_analysis(jsonl_path, target_length=45):
-    tokenizer = AutoTokenizer.from_pretrained(
-        "deepseek-ai/DeepSeek-V3-0324", trust_remote_code=True
-    )
-    df = pd.DataFrame([json.loads(line) for line in open(jsonl_path)])
+import pandas as pd
+import json
+import os
+from transformers import AutoTokenizer
 
-    # Filter to the target saturation length
+
+def token_provenance_analysis(
+    jsonl_paths, target_length=38, tokenizer_repo="deepseek-ai/DeepSeek-V3-0324"
+):
+    # if not os.path.exists(jsonl_path):
+    #    raise FileNotFoundError(f"[!] ERROR: Could not find {jsonl_path}.")
+
+    print(f"[*] Loading Tokenizer ({tokenizer_repo}) for decoding...")
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_repo, trust_remote_code=True)
+
+    # Load data natively into Pandas
+    df = pd.concat([pd.read_json(p, lines=True) for p in jsonl_paths])
+
+    # Filter strictly to the target sequence length
     len_df = df[df["sequence_length"] == target_length]
     if len_df.empty:
-        print(f"No data for length {target_length}.")
+        print(f"[!] No data for length {target_length}.")
         return
 
-    # Get the best token arrays for both init types
-    try:
-        best_warm_idx = len_df[len_df["init_type"] == "Warm Start"]["score"].idxmax()
-        best_rand_idx = len_df[len_df["init_type"] == "Random Start"]["score"].idxmax()
+    # Analyze the provenance separately for BPE and ASCII phases
+    phases = sorted(len_df["phase"].unique())
 
+    for phase in phases:
+        phase_df = len_df[len_df["phase"] == phase]
+
+        # Get the DataFrame subsets for both init types
+        warm_df = phase_df[phase_df["init_type"] == "Warm Start"]
+        rand_df = phase_df[phase_df["init_type"] == "Random Start"]
+
+        if warm_df.empty or rand_df.empty:
+            print(
+                f"  [!] Missing either Warm or Rand starts for Phase: {phase.upper()}. Skipping."
+            )
+            continue
+
+        # Find the absolute best run for each strategy at this length
+        best_warm_idx = warm_df["score"].idxmax()
+        best_rand_idx = rand_df["score"].idxmax()
+
+        # Extract the raw token ID arrays and convert to Sets for comparison
         warm_tokens = set(df.loc[best_warm_idx, "token_ids"])
         rand_tokens = set(df.loc[best_rand_idx, "token_ids"])
-    except ValueError:
-        print("Missing either Warm or Rand starts for this length.")
-        return
 
-    # Set Operations
-    core_pillars = warm_tokens.intersection(rand_tokens)
-    global_keys = rand_tokens - warm_tokens
-    greedy_baggage = warm_tokens - rand_tokens
+        # Set Operations
+        core_pillars = warm_tokens.intersection(rand_tokens)
+        global_keys = rand_tokens - warm_tokens
+        greedy_baggage = warm_tokens - rand_tokens
 
-    def decode_set(token_set):
-        # We decode individually to see the exact fragments, replacing BPE spaces for readability
-        return [repr(tokenizer.decode([t])) for t in token_set]
+        def decode_set(token_set):
+            # Decode individually, replacing BPE spaces for readability
+            return [repr(tokenizer.decode([t])) for t in token_set]
+
+        print(f"\n==================================================")
+        print(f"🧬 TOKEN PROVENANCE | LENGTH {target_length} | {phase.upper()} 🧬")
+        print(f"==================================================")
+
+        print(f"\n[1] THE ANCHORS (Shared by both) - {len(core_pillars)} tokens:")
+        print("These are geometrically essential. Neither path could drop them.")
+        print(", ".join(decode_set(core_pillars)))
+
+        print(f"\n[2] THE GLOBAL KEYS (Rand Only) - {len(global_keys)} tokens:")
+        print(
+            "These broke the plateau. They represent superior structural arrangement."
+        )
+        if global_keys:
+            print(", ".join(decode_set(global_keys)))
+        else:
+            print("None. Random start did not find novel tokens.")
+
+        print(f"\n[3] THE GREEDY BAGGAGE (Warm Only) - {len(greedy_baggage)} tokens:")
+        print(
+            "These are artifacts of local minima. The Warm start was trapped by them."
+        )
+        if greedy_baggage:
+            print(", ".join(decode_set(greedy_baggage)))
+        else:
+            print("None. Warm start was highly efficient.")
+
+
+def anchor_survival_analysis(
+    jsonl_paths,
+    min_len=30,
+    max_len=38,
+    phase="ascii_constrained",
+    tokenizer_repo="deepseek-ai/DeepSeek-V3-0324",
+):
+    # if not os.path.exists(jsonl_path):
+    #    print(f"[!] ERROR: Could not find {jsonl_path}.")
+    #    return
+
+    print(f"[*] Loading Tokenizer ({tokenizer_repo}) for decoding...")
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_repo, trust_remote_code=True)
+
+    df = pd.concat([pd.read_json(p, lines=True) for p in jsonl_paths])
+
+    # Filter to the optimal window and the target phase
+    window_df = df[
+        (df["sequence_length"] >= min_len)
+        & (df["sequence_length"] <= max_len)
+        & (df["phase"] == phase)
+    ]
+
+    total_lengths_analyzed = 0
+    anchor_survival_counts = {}
 
     print(f"\n==================================================")
-    print(f"🧬 TOKEN PROVENANCE ANALYSIS | LENGTH {target_length} 🧬")
+    print(f"⚓ ANCHOR SURVIVAL ANALYSIS | L{min_len}-L{max_len} | {phase.upper()} ⚓")
     print(f"==================================================")
 
-    print(f"\n[1] THE ANCHORS (Shared by both) - {len(core_pillars)} tokens:")
-    print("These are geometrically essential. Neither path could drop them.")
-    print(", ".join(decode_set(core_pillars)))
+    for seq_len in range(min_len, max_len + 1):
+        len_df = window_df[window_df["sequence_length"] == seq_len]
 
-    print(f"\n[2] THE GLOBAL KEYS (Rand Only) - {len(global_keys)} tokens:")
-    print("These broke the plateau. They represent superior structural arrangement.")
-    print(", ".join(decode_set(global_keys)))
+        warm_df = len_df[len_df["init_type"] == "Warm Start"]
+        rand_df = len_df[len_df["init_type"] == "Random Start"]
 
-    print(f"\n[3] THE GREEDY BAGGAGE (Warm Only) - {len(greedy_baggage)} tokens:")
-    print("These are artifacts of local minima. The Warm start was trapped by them.")
-    print(", ".join(decode_set(greedy_baggage)))
+        if warm_df.empty or rand_df.empty:
+            continue
+
+        # Extract the best token sets for this specific length
+        warm_tokens = set(len_df.loc[warm_df["score"].idxmax(), "token_ids"])
+        rand_tokens = set(len_df.loc[rand_df["score"].idxmax(), "token_ids"])
+
+        # Calculate the Anchors (Intersection)
+        anchors = warm_tokens.intersection(rand_tokens)
+
+        # Log survival of these anchors
+        for token_id in anchors:
+            anchor_survival_counts[token_id] = (
+                anchor_survival_counts.get(token_id, 0) + 1
+            )
+
+        total_lengths_analyzed += 1
+
+    if total_lengths_analyzed == 0:
+        print("[!] No overlapping valid lengths found to analyze.")
+        return
+
+    # Filter for tokens that were Anchors in >= 80% of the evaluated lengths
+    core_anchors = {
+        t_id: count
+        for t_id, count in anchor_survival_counts.items()
+        if count / total_lengths_analyzed >= 0.80
+    }
+
+    core_anchors = dict(
+        sorted(core_anchors.items(), key=lambda item: item[1], reverse=True)
+    )
+
+    print(f"\n--- TITANIUM PAYLOAD (Strict Anchor Survival >= 80%) ---")
+    print(f"Evaluated {total_lengths_analyzed} lengths.")
+    print(f"Isolated {len(core_anchors)} absolute core tokens.\n")
+
+    print(f"{'Token ID':<10} | {'Survival %':<12} | {'Decoded String'}")
+    print("-" * 50)
+    for t_id, count in core_anchors.items():
+        token_str = repr(tokenizer.decode([t_id]))
+        pct = (count / total_lengths_analyzed) * 100
+        print(f"[{t_id:<8}] | {pct:>3.0f}%        | {token_str}")
+
+    # Target Length 38 represents the peak efficiency before noise overfitting
 
 
 # Usage: token_provenance_analysis("gcg_trigger_search_...jsonl", target_length=45)
@@ -286,7 +410,11 @@ def token_provenance_analysis(jsonl_path, target_length=45):
 
 
 find_saturation_point(ENRICHED_FILE)
-
 analyze_init_divergence(ENRICHED_FILE)
+isolate_core_payload(ENRICHED_FILE, max_tokens=46)
 
-isolate_core_payload(ENRICHED_FILE, max_tokens=40)
+for tk_len in range(20, 47):
+    token_provenance_analysis(ENRICHED_FILE, target_length=tk_len)
+# token_provenance_analysis(ENRICHED_FILE, target_length=38)
+
+anchor_survival_analysis(ENRICHED_FILE, min_len=20, max_len=46)

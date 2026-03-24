@@ -4,6 +4,7 @@ secrets.json
 data/*
 *.csv
 notes/*
+secrets/*
 
 
 ##### PYTHON #####

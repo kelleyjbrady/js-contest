@@ -32,6 +32,7 @@ def run_command(cmd, shell=False, silent=False):
 
 
 def setup_environment():
+    """Builds the container, pushes to GCR, and writes the native GPU startup script."""
     print("[*] Phase 1: Preparing Orbital Payload...")
     run_command(f"gcloud config set project {PROJECT_ID}")
 
@@ -45,10 +46,31 @@ def setup_environment():
         print(f"[!] Docker push failed: {err}")
         sys.exit(1)
 
+    # THE UPGRADED STARTUP SCRIPT
     startup_script = f"""#!/bin/bash
+# 1. Fetch the dynamic restart length from the VM's custom metadata
+MIN_LEN=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/attributes/min_len")
+
+# 2. Wait for the Deep Learning VM to ensure NVIDIA drivers are loaded
+echo "[*] Waiting for NVIDIA hardware to initialize..."
+until nvidia-smi; do sleep 5; done
+
+# 3. Stage the Data
 mkdir -p /var/mnt/disks/data /var/mnt/disks/output
 gcloud storage cp gs://{BUCKET_NAME}/*.pt /var/mnt/disks/data/
 chmod -R 777 /var/mnt/disks/data /var/mnt/disks/output
+
+# 4. Authenticate Docker with Google Container Registry
+gcloud auth configure-docker --quiet
+
+# 5. Launch the Optimizer with EXPLICIT native GPU passthrough
+sudo docker run -d --gpus all \\
+  -v /var/mnt/disks/data:/app/data \\
+  -v /var/mnt/disks/output:/app/output \\
+  {IMAGE_NAME} \\
+  --project_id={PROJECT_ID} \\
+  --min_len=$MIN_LEN \\
+  --max_len={TARGET_MAX_LEN}
 """
     with open("/tmp/startup.sh", "w") as f:
         f.write(startup_script)
@@ -67,14 +89,15 @@ def get_resume_length():
 
 
 def launch_instance(zone, machine_type, gpu_type, min_len):
+    """Attempts to provision a Deep Learning VM in the specified zone."""
     print(f"\n[*] Phase 2: Requesting {gpu_type} in {zone} (Resuming at L{min_len})...")
 
-    # Using a list entirely prevents Bash trailing-space line-break errors
+    # We switch to standard 'create', use the Deep Learning image, and bump the disk to 100GB
     cmd_list = [
         "gcloud",
         "compute",
         "instances",
-        "create-with-container",
+        "create",
         INSTANCE_NAME,
         f"--project={PROJECT_ID}",
         f"--zone={zone}",
@@ -82,23 +105,18 @@ def launch_instance(zone, machine_type, gpu_type, min_len):
         "--provisioning-model=SPOT",
         "--instance-termination-action=DELETE",
         f"--accelerator=count=1,type={gpu_type}",
-        "--image-family=cos-stable",
-        "--image-project=cos-cloud",
-        "--boot-disk-size=50GB",
+        "--image-family=common-cu128-ubuntu-2204-nvidia-570",
+        "--image-project=deeplearning-platform-release",
+        "--boot-disk-size=200GB",
         "--scopes=https://www.googleapis.com/auth/cloud-platform",
         "--metadata-from-file=startup-script=/tmp/startup.sh",
-        f"--container-image={IMAGE_NAME}",
-        "--container-mount-host-path=host-path=/var/mnt/disks/data,mount-path=/app/data,mode=rw",
-        "--container-mount-host-path=host-path=/var/mnt/disks/output,mount-path=/app/output,mode=rw",
-        f"--container-arg=--project_id={PROJECT_ID}",
-        f"--container-arg=--min_len={min_len}",
-        f"--container-arg=--max_len={TARGET_MAX_LEN}",
+        f"--metadata=install-nvidia-driver=True,min_len={min_len}",
     ]
 
     code, out, err = run_command(cmd_list)
 
     if code == 0:
-        print(f"[+] SUCCESS! VM provisioned in {zone}.")
+        print(f"[+] SUCCESS! Deep Learning VM provisioned in {zone}.")
         return "SUCCESS"
 
     # --- STRICT ERROR PARSING ---
@@ -107,10 +125,6 @@ def launch_instance(zone, machine_type, gpu_type, min_len):
             f"\n[FATAL QUOTA LOCKOUT] Google is blocking the hardware request in {zone}."
         )
         print(f"Error Details: {err}")
-        print("\nFix: Go to GCP Console -> 'IAM & Admin' -> 'Quotas'.")
-        print(
-            "Search for 'Preemptible NVIDIA L4 GPUs' or 'GPUs (all regions)' and request an increase from 0 to 1."
-        )
         sys.exit(1)
 
     if "already exists" in err:
@@ -123,7 +137,7 @@ def launch_instance(zone, machine_type, gpu_type, min_len):
         return "RETRY_SAME"
 
     if "not enabled on project" in err:
-        print("[-] Compute API not enabled. Enabling now (this takes ~60s)...")
+        print("[-] Compute API not enabled. Enabling now...")
         run_command("gcloud services enable compute.googleapis.com")
         return "RETRY_SAME"
 
@@ -196,43 +210,46 @@ def monitor_instance(zone):
 def main():
     global ACTIVE_ZONE
     setup_environment()
-    
+
     while True:
         min_len = get_resume_length()
         if min_len >= TARGET_MAX_LEN:
-            print(f"\n[+] Optimization fully complete! Final length L{TARGET_MAX_LEN} reached.")
+            print(
+                f"\n[+] Optimization fully complete! Final length L{TARGET_MAX_LEN} reached."
+            )
             break
-            
+
         deployed = False
         for zone in L4_ZONES:
-            ACTIVE_ZONE = zone # Track the zone we are trying
+            ACTIVE_ZONE = zone  # Track the zone we are trying
             status = launch_instance(zone, "g2-standard-4", "nvidia-l4", min_len)
             if status == "RETRY_SAME":
                 status = launch_instance(zone, "g2-standard-4", "nvidia-l4", min_len)
-            
+
             if status == "SUCCESS":
                 monitor_instance(zone)
                 deployed = True
                 break
-                
+
         if deployed:
             continue
-            
+
         print("\n[*] ALL L4 ZONES EXHAUSTED. Initiating T4 Downgrade Protocol...")
         for zone in T4_ZONES:
-            ACTIVE_ZONE = zone # Track the fallback zone
+            ACTIVE_ZONE = zone  # Track the fallback zone
             status = launch_instance(zone, "n1-standard-4", "nvidia-tesla-t4", min_len)
             if status == "SUCCESS":
                 monitor_instance(zone)
                 deployed = True
                 break
-                
+
         if deployed:
             continue
-            
+
         print("\n[!] CRITICAL: Complete global stockout of both L4 and T4 GPUs.")
         print("Sleeping for 10 minutes before retrying...")
         time.sleep(600)
+
 
 if __name__ == "__main__":
     try:
@@ -244,7 +261,9 @@ if __name__ == "__main__":
         if ACTIVE_ZONE:
             print(f"[*] Sweeping {ACTIVE_ZONE} for orphaned VMs...")
             subprocess.run(
-                f"gcloud compute instances delete {INSTANCE_NAME} --zone={ACTIVE_ZONE} --quiet", 
-                shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
+                f"gcloud compute instances delete {INSTANCE_NAME} --zone={ACTIVE_ZONE} --quiet",
+                shell=True,
+                stderr=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
             )
             print("[+] Cleanup complete. Runway cleared.")

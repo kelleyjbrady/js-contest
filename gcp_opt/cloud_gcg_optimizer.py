@@ -8,6 +8,7 @@ import subprocess
 from datetime import datetime, timezone
 import string
 import time
+from google.cloud import storage
 
 
 @torch.no_grad()
@@ -100,7 +101,10 @@ def run_cloud_gcg(args):
 
     print("[*] Compiling Strict ASCII Vocabulary Mask...")
     safe_chars = set(string.ascii_letters + string.digits + string.punctuation + " ")
-    ascii_mask = torch.zeros(tokenizer.vocab_size, dtype=torch.bool, device=device)
+
+    # 1. Use the physical size of the tensor (129280) instead of the tokenizer's claim
+    actual_vocab_size = W_E.shape[0]
+    ascii_mask = torch.zeros(actual_vocab_size, dtype=torch.bool, device=device)
 
     for word, idx in tokenizer.get_vocab().items():
         decoded = tokenizer.decode([idx])
@@ -209,22 +213,23 @@ def run_cloud_gcg(args):
                     f"L{seq_len} | Step {step:04d} | Best Score: {best_overall_score:.4f} | {repr(decoded_str)}"
                 )
 
-            # Low-Frequency Cloud Sync (Every 50 steps + Final Step) to prevent network choking
+            # Low-Frequency Cloud Sync (Every 50 steps + Final Step)
             if step % 50 == 0 or is_final_step:
-                bucket_path = f"gs://{args.project_id}-gcg-data/logs/"
-                sync_process = subprocess.Popen(
-                    ["gcloud", "storage", "cp", local_log_path, bucket_path],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+                try:
+                    # Use native Python GCP library (Auth is handled automatically by the VM)
+                    storage_client = storage.Client(project=args.project_id)
+                    bucket = storage_client.bucket(f"{args.project_id}-gcg-data")
+                    blob = bucket.blob(f"logs/{log_filename}")
 
-                # FIX: If this is the absolute end of the program, wait for the upload to finish
+                    # This is a synchronous blocking call, which naturally solves our race conditions
+                    blob.upload_from_filename(local_log_path)
+                except Exception as e:
+                    print(f"[-] Non-fatal cloud sync error: {e}")
+
                 if is_final_step and seq_len == args.max_len:
                     print(
-                        "[*] Final sequence complete. Waiting for cloud sync to terminate..."
+                        "[*] Final sequence complete. Cloud sync successful. Shutting down."
                     )
-                    sync_process.wait()
-                    print("[*] Sync complete. Shutting down.")
 
 
 if __name__ == "__main__":

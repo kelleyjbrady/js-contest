@@ -5,6 +5,7 @@ data/*
 *.csv
 notes/*
 secrets/*
+telemetry_data/*
 
 
 ##### PYTHON #####

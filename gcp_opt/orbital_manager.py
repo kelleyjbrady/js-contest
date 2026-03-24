@@ -46,24 +46,34 @@ def setup_environment():
         print(f"[!] Docker push failed: {err}")
         sys.exit(1)
 
-    # THE UPGRADED STARTUP SCRIPT
     startup_script = f"""#!/bin/bash
-# 1. Fetch the dynamic restart length from the VM's custom metadata
 MIN_LEN=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/attributes/min_len")
 
-# 2. Wait for the Deep Learning VM to ensure NVIDIA drivers are loaded
 echo "[*] Waiting for NVIDIA hardware to initialize..."
 until nvidia-smi; do sleep 5; done
 
-# 3. Stage the Data
+echo "[*] Waiting for Ubuntu background updates to release APT lock..."
+while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 ; do sleep 5; done
+while fuser /var/lib/apt/lists/lock >/dev/null 2>&1 ; do sleep 5; done
+
+echo "[*] Installing Docker Engine and NVIDIA Runtime..."
+apt-get update
+apt-get install -y docker.io
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+apt-get update
+apt-get install -y nvidia-container-toolkit
+nvidia-ctk runtime configure --runtime=docker
+systemctl restart docker
+
+echo "[*] Staging Tensors..."
 mkdir -p /var/mnt/disks/data /var/mnt/disks/output
 gcloud storage cp gs://{BUCKET_NAME}/*.pt /var/mnt/disks/data/
 chmod -R 777 /var/mnt/disks/data /var/mnt/disks/output
 
-# 4. Authenticate Docker with Google Container Registry
 gcloud auth configure-docker --quiet
 
-# 5. Launch the Optimizer with EXPLICIT native GPU passthrough
+echo "[*] Igniting Optimizer..."
 sudo docker run -d --gpus all \\
   -v /var/mnt/disks/data:/app/data \\
   -v /var/mnt/disks/output:/app/output \\
@@ -111,6 +121,7 @@ def launch_instance(zone, machine_type, gpu_type, min_len):
         "--scopes=https://www.googleapis.com/auth/cloud-platform",
         "--metadata-from-file=startup-script=/tmp/startup.sh",
         f"--metadata=install-nvidia-driver=True,min_len={min_len}",
+        "--quiet",  # <--- ADD THIS FLAG HERE
     ]
 
     code, out, err = run_command(cmd_list)
@@ -154,17 +165,37 @@ def launch_instance(zone, machine_type, gpu_type, min_len):
 
 
 def monitor_instance(zone):
-    """Polls the VM status and actively streams Docker output."""
+    """Patiently waits for SSH, then streams live Docker output."""
     print(f"\n[*] Phase 3: Establishing SSH Telemetry to {INSTANCE_NAME} in {zone}...")
+    print("[*] Waiting for Ubuntu OS to boot SSH daemon (approx. 60-90 seconds)...")
 
-    # Give the VM 20 seconds to finish booting the SSH daemon
-    time.sleep(20)
+    # 1. The SSH Ping Loop
+    while True:
+        code, _, _ = run_command(
+            [
+                "gcloud",
+                "compute",
+                "ssh",
+                INSTANCE_NAME,
+                f"--zone={zone}",
+                f"--project={PROJECT_ID}",
+                "--command",
+                "echo 'ready'",
+            ],
+            silent=True,
+        )
+        if code == 0:
+            break
+        time.sleep(10)
+        sys.stdout.write(".")
+        sys.stdout.flush()
 
-    # This bash command waits for the container to exist, then tails its logs
-    docker_wait_and_tail = f"""
-    until sudo docker ps -qf ancestor={IMAGE_NAME} | grep -q .; do sleep 2; done; 
-    sudo docker logs -f $(sudo docker ps -qf ancestor={IMAGE_NAME} | head -n 1)
-    """
+    print(
+        "\n[*] SSH Lock Acquired! Waiting for Docker installation and payload deployment..."
+    )
+
+    # 2. Flattened into a single string to bypass SSH multiline bugs
+    docker_wait_and_tail = f"until command -v docker >/dev/null 2>&1 && sudo docker ps -qf ancestor={IMAGE_NAME} | grep -q .; do sleep 5; done; sudo docker logs -f $(sudo docker ps -qf ancestor={IMAGE_NAME} | head -n 1)"
 
     ssh_cmd = [
         "gcloud",
@@ -182,7 +213,6 @@ def monitor_instance(zone):
     )
     print("-" * 60)
     try:
-        # We use subprocess.run without capturing output so it pipes directly to your screen
         subprocess.run(ssh_cmd)
     except KeyboardInterrupt:
         print("\n[*] Detached from live logs. VM continues in the background.")
@@ -199,7 +229,7 @@ def monitor_instance(zone):
 
         if code != 0 or "was not found" in err:
             print(
-                f"\n[-] VM {INSTANCE_NAME} no longer exists. It either finished or was preempted."
+                f"\n[-] VM {INSTANCE_NAME} no longer exists. Returning to orchestrator."
             )
             return
         else:

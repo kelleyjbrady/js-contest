@@ -10,6 +10,7 @@ BUCKET_NAME = f"{PROJECT_ID}-gcg-data"
 IMAGE_NAME = f"gcr.io/{PROJECT_ID}/gcg-optimizer:latest"
 INSTANCE_NAME = "gcg-spot-node-1"
 TARGET_MAX_LEN = 60
+ACTIVE_ZONE = None
 
 # Strategy 1: The L4 Hit List
 L4_ZONES = ["us-west1-a", "us-west1-b", "us-central1-a", "us-central1-c", "us-east1-d"]
@@ -193,45 +194,57 @@ def monitor_instance(zone):
 
 
 def main():
+    global ACTIVE_ZONE
     setup_environment()
-
+    
     while True:
         min_len = get_resume_length()
         if min_len >= TARGET_MAX_LEN:
-            print(
-                f"\n[+] Optimization fully complete! Final length L{TARGET_MAX_LEN} reached."
-            )
+            print(f"\n[+] Optimization fully complete! Final length L{TARGET_MAX_LEN} reached.")
             break
-
+            
         deployed = False
         for zone in L4_ZONES:
+            ACTIVE_ZONE = zone # Track the zone we are trying
             status = launch_instance(zone, "g2-standard-4", "nvidia-l4", min_len)
             if status == "RETRY_SAME":
                 status = launch_instance(zone, "g2-standard-4", "nvidia-l4", min_len)
-
+            
             if status == "SUCCESS":
                 monitor_instance(zone)
                 deployed = True
                 break
-
+                
         if deployed:
             continue
-
+            
         print("\n[*] ALL L4 ZONES EXHAUSTED. Initiating T4 Downgrade Protocol...")
         for zone in T4_ZONES:
+            ACTIVE_ZONE = zone # Track the fallback zone
             status = launch_instance(zone, "n1-standard-4", "nvidia-tesla-t4", min_len)
             if status == "SUCCESS":
                 monitor_instance(zone)
                 deployed = True
                 break
-
+                
         if deployed:
             continue
-
+            
         print("\n[!] CRITICAL: Complete global stockout of both L4 and T4 GPUs.")
         print("Sleeping for 10 minutes before retrying...")
         time.sleep(600)
 
-
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\n[!] ORCHESTRATOR ABORTED BY USER (Ctrl+C).")
+    finally:
+        # The Dead Man's Switch: Always run this cleanup when the script exits
+        if ACTIVE_ZONE:
+            print(f"[*] Sweeping {ACTIVE_ZONE} for orphaned VMs...")
+            subprocess.run(
+                f"gcloud compute instances delete {INSTANCE_NAME} --zone={ACTIVE_ZONE} --quiet", 
+                shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
+            )
+            print("[+] Cleanup complete. Runway cleared.")

@@ -139,16 +139,52 @@ def launch_instance(zone, machine_type, gpu_type, min_len):
 
 
 def monitor_instance(zone):
-    print(f"[*] Phase 3: Monitoring VM lifecycle in {zone}...")
+    """Polls the VM status and actively streams Docker output."""
+    print(f"\n[*] Phase 3: Establishing SSH Telemetry to {INSTANCE_NAME} in {zone}...")
+
+    # Give the VM 20 seconds to finish booting the SSH daemon
+    time.sleep(20)
+
+    # This bash command waits for the container to exist, then tails its logs
+    docker_wait_and_tail = f"""
+    until sudo docker ps -qf ancestor={IMAGE_NAME} | grep -q .; do sleep 2; done; 
+    sudo docker logs -f $(sudo docker ps -qf ancestor={IMAGE_NAME} | head -n 1)
+    """
+
+    ssh_cmd = [
+        "gcloud",
+        "compute",
+        "ssh",
+        INSTANCE_NAME,
+        f"--zone={zone}",
+        f"--project={PROJECT_ID}",
+        "--command",
+        docker_wait_and_tail,
+    ]
+
+    print(
+        "[*] Tapping into live Docker output (Press Ctrl+C to detach without killing VM)..."
+    )
+    print("-" * 60)
+    try:
+        # We use subprocess.run without capturing output so it pipes directly to your screen
+        subprocess.run(ssh_cmd)
+    except KeyboardInterrupt:
+        print("\n[*] Detached from live logs. VM continues in the background.")
+
+    print("-" * 60)
+    print("[*] Falling back to silent health polling...")
+
     while True:
         time.sleep(30)
         code, out, err = run_command(
             f"gcloud compute instances describe {INSTANCE_NAME} --zone={zone} --format='value(status)'",
             silent=True,
         )
+
         if code != 0 or "was not found" in err:
             print(
-                f"\n[-] VM {INSTANCE_NAME} no longer exists. Returning to orchestrator."
+                f"\n[-] VM {INSTANCE_NAME} no longer exists. It either finished or was preempted."
             )
             return
         else:

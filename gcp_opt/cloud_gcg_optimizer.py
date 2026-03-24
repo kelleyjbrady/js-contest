@@ -7,6 +7,7 @@ import json
 import subprocess
 from datetime import datetime, timezone
 import string
+import time
 
 
 @torch.no_grad()
@@ -84,6 +85,14 @@ def run_cloud_gcg(args):
     tokenizer = AutoTokenizer.from_pretrained(
         "deepseek-ai/DeepSeek-V3-0324", trust_remote_code=True
     )
+
+    embed_path = f"{args.data_dir}/embed_layer_15.pt"
+    trigger_path = f"{args.data_dir}/trigger_layer_15.pt"
+
+    print(f"[*] Waiting for host VM to sync tensors to {args.data_dir}...")
+    while not os.path.exists(embed_path) or not os.path.exists(trigger_path):
+        time.sleep(5)
+    print("[*] Tensors located. Loading into VRAM...")
 
     W_E = torch.load(f"{args.data_dir}/embed_layer_15.pt", map_location=device)
     v_trigger = torch.load(f"{args.data_dir}/trigger_layer_15.pt", map_location=device)

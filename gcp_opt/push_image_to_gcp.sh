@@ -1,5 +1,6 @@
-# Build the image locally
-docker build -t gcr.io/YOUR_PROJECT_ID/gcg-optimizer:latest .
+# 1. Set your Project ID
+export PROJECT_ID="js-puzzle-491119"
 
-# Push to GCP
-docker push gcr.io/YOUR_PROJECT_ID/gcg-optimizer:latest
+# 2. Build and Push the Image
+docker build -t gcr.io/$PROJECT_ID/gcg-optimizer:latest .
+docker push gcr.io/$PROJECT_ID/gcg-optimizer:latest

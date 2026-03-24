@@ -118,8 +118,15 @@ def run_cloud_gcg(args):
     )
 
     for seq_len in range(args.min_len, args.max_len + 1):
+        # --- THE DYNAMIC SCHEDULE ---
+        # Base of 500 steps + 50 steps per token.
+        # L10 = 1,000 steps. L60 = 3,500 steps. L100 = 5,500 steps.
+        dynamic_iterations = 500 + (seq_len * 50)
+
         print(f"\n==================================================")
-        print(f"[*] STARTING OPTIMIZATION FOR LENGTH: {seq_len}")
+        print(
+            f"[*] STARTING OPTIMIZATION FOR LENGTH: {seq_len} ({dynamic_iterations} Iters)"
+        )
         print(f"==================================================")
 
         log_filename = f"cloud_gcg_L{seq_len}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.jsonl"
@@ -133,11 +140,12 @@ def run_cloud_gcg(args):
         best_overall_score = -1.0
         stagnation_counter = 0
         current_patience_limit = 50
-        thermal_momentum = 0.0  # NEW
+        thermal_momentum = 0.0
 
-        for step in range(args.iterations):
+        # REPLACE args.iterations with dynamic_iterations here
+        for step in range(dynamic_iterations):
             # 1. Hyperparameter Scheduling with Thermal Momentum
-            progress = step / args.iterations
+            progress = step / dynamic_iterations  # Update progress calculation too!
             base_temp = 2.0 * (0.1**progress)
             current_temp = base_temp + thermal_momentum
 
@@ -193,7 +201,7 @@ def run_cloud_gcg(args):
                 stagnation_counter += 1
 
             # 5. Logging & Bucket Sync
-            is_final_step = step == args.iterations - 1
+            is_final_step = step == dynamic_iterations - 1
 
             # High-Resolution Local Logging (Every 10 steps + Final Step)
             if step % 10 == 0 or is_final_step:

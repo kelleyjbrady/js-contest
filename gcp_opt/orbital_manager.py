@@ -9,8 +9,11 @@ PROJECT_ID = "js-puzzle-491119"
 BUCKET_NAME = f"{PROJECT_ID}-gcg-data"
 IMAGE_NAME = f"gcr.io/{PROJECT_ID}/gcg-optimizer:latest"
 INSTANCE_NAME = "gcg-spot-node-1"
-TARGET_MAX_LEN = 60
+TARGET_MAX_LEN = 110
+TARGET_MIN_LEN = 5
 ACTIVE_ZONE = None
+TARGET_LAYER = 20
+CAMPAIGN_ID = "layer20_deep_sweep_01"
 
 # Strategy 1: The L4 Hit List
 L4_ZONES = ["us-west1-a", "us-west1-b", "us-central1-a", "us-central1-c", "us-east1-d"]
@@ -74,28 +77,30 @@ chmod -R 777 /var/mnt/disks/data /var/mnt/disks/output
 gcloud auth configure-docker --quiet
 
 echo "[*] Igniting Optimizer..."
-sudo docker run -d --gpus all \\
-  -v /var/mnt/disks/data:/app/data \\
-  -v /var/mnt/disks/output:/app/output \\
-  {IMAGE_NAME} \\
-  --project_id={PROJECT_ID} \\
-  --min_len=$MIN_LEN \\
-  --max_len={TARGET_MAX_LEN}
+sudo docker run -d --gpus all \
+  -v /var/mnt/disks/data:/app/data \
+  -v /var/mnt/disks/output:/app/output \
+  {IMAGE_NAME} \
+  --project_id={PROJECT_ID} \
+  --campaign_id={CAMPAIGN_ID} \
+  --min_len=$MIN_LEN \
+  --max_len={TARGET_MAX_LEN} \
+  --target_layer={TARGET_LAYER}
 """
     with open("/tmp/startup.sh", "w") as f:
         f.write(startup_script)
     print("[+] Payload staged successfully.")
 
 
-def get_resume_length():
+def get_resume_length(default_min=91):
     code, out, _ = run_command(
-        f"gcloud storage ls gs://{BUCKET_NAME}/logs/", silent=True
+        f"gcloud storage ls gs://{BUCKET_NAME}/logs/{CAMPAIGN_ID}/", silent=True
     )
     if code != 0 or not out:
-        return 5
+        return default_min
 
     lengths = [int(m) for m in re.findall(r"_L(\d+)_", out)]
-    return max(lengths) if lengths else 5
+    return max(lengths) if lengths else default_min
 
 
 def launch_instance(zone, machine_type, gpu_type, min_len):
@@ -204,6 +209,8 @@ def monitor_instance(zone):
         INSTANCE_NAME,
         f"--zone={zone}",
         f"--project={PROJECT_ID}",
+        "--ssh-flag=-o ServerAliveInterval=30",  # <--- ADD THIS PING
+        "--ssh-flag=-o ServerAliveCountMax=2",  # <--- ADD THIS TIMEOUT
         "--command",
         docker_wait_and_tail,
     ]
@@ -242,7 +249,7 @@ def main():
     setup_environment()
 
     while True:
-        min_len = get_resume_length()
+        min_len = get_resume_length(default_min=TARGET_MIN_LEN)
         if min_len >= TARGET_MAX_LEN:
             print(
                 f"\n[+] Optimization fully complete! Final length L{TARGET_MAX_LEN} reached."

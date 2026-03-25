@@ -224,12 +224,11 @@ def run_cloud_gcg(args):
             # Low-Frequency Cloud Sync (Every 50 steps + Final Step)
             if step % 50 == 0 or is_final_step:
                 try:
-                    # Use native Python GCP library (Auth is handled automatically by the VM)
+                    # Inject the campaign_id to create an isolated subfolder in the bucket
                     storage_client = storage.Client(project=args.project_id)
                     bucket = storage_client.bucket(f"{args.project_id}-gcg-data")
-                    blob = bucket.blob(f"logs/{log_filename}")
+                    blob = bucket.blob(f"logs/{args.campaign_id}/{log_filename}")
 
-                    # This is a synchronous blocking call, which naturally solves our race conditions
                     blob.upload_from_filename(local_log_path)
                 except Exception as e:
                     print(f"[-] Non-fatal cloud sync error: {e}")
@@ -247,6 +246,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--project_id", type=str, required=True, help="Your GCP Project ID"
     )
+    parser.add_argument(
+        "--campaign_id",
+        type=str,
+        default="default_campaign",
+        help="Isolates bucket logging",
+    )  # <--- ADD THIS
     parser.add_argument("--min_len", type=int, default=23)
     parser.add_argument("--max_len", type=int, default=38)
     parser.add_argument("--iterations", type=int, default=1000)

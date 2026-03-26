@@ -5,15 +5,27 @@ import sys
 import os
 
 # --- CONFIGURATION ---
+# --- CONFIGURATION ---
 PROJECT_ID = "js-puzzle-491119"
 BUCKET_NAME = f"{PROJECT_ID}-gcg-data"
-IMAGE_NAME = f"gcr.io/{PROJECT_ID}/gcg-optimizer:latest"
+RUN_MODE = "HPO"  # <--- Master Switch: "SWEEP" or "HPO"
+
+# Dynamic Routing based on mode
+if RUN_MODE == "SWEEP":
+    IMAGE_NAME = f"gcr.io/{PROJECT_ID}/gcg-optimizer:latest"
+    DOCKERFILE = "Dockerfile"
+    CAMPAIGN_ID = "layer20_deep_sweep_01"
+else:
+    IMAGE_NAME = f"gcr.io/{PROJECT_ID}/gcg-hpo:latest"
+    DOCKERFILE = "Dockerfile.hpo"
+    CAMPAIGN_ID = "hpo_sprint_layer15_01"
+
 INSTANCE_NAME = "gcg-spot-node-1"
 TARGET_MAX_LEN = 110
 TARGET_MIN_LEN = 5
+HPO_TARGET_LEN = 60
+TARGET_LAYER = 15
 ACTIVE_ZONE = None
-TARGET_LAYER = 20
-CAMPAIGN_ID = "layer20_deep_sweep_01"
 
 # Strategy 1: The L4 Hit List
 L4_ZONES = ["us-west1-a", "us-west1-b", "us-central1-a", "us-central1-c", "us-east1-d"]
@@ -39,7 +51,7 @@ def setup_environment():
     print("[*] Phase 1: Preparing Orbital Payload...")
     run_command(f"gcloud config set project {PROJECT_ID}")
 
-    code, _, err = run_command(f"docker build -t {IMAGE_NAME} .")
+    code, _, err = run_command(f"docker build -f {DOCKERFILE} -t {IMAGE_NAME} .")
     if code != 0:
         print(f"[!] Docker build failed: {err}")
         sys.exit(1)
@@ -48,6 +60,28 @@ def setup_environment():
     if code != 0:
         print(f"[!] Docker push failed: {err}")
         sys.exit(1)
+
+    if RUN_MODE == "SWEEP":
+        docker_run_cmd = f"""sudo docker run -d --gpus all \\
+  -v /var/mnt/disks/data:/app/data \\
+  -v /var/mnt/disks/output:/app/output \\
+  {IMAGE_NAME} \\
+  --project_id={PROJECT_ID} \\
+  --campaign_id={CAMPAIGN_ID} \\
+  --min_len=$MIN_LEN \\
+  --max_len={TARGET_MAX_LEN} \\
+  --target_layer={TARGET_LAYER}"""
+    else:
+        # HPO Mode does not need min/max length, it needs seq_len and trials
+        docker_run_cmd = f"""sudo docker run -d --gpus all \\
+  -v /var/mnt/disks/data:/app/data \\
+  -v /var/mnt/disks/output:/app/output \\
+  {IMAGE_NAME} \\
+  --project_id={PROJECT_ID} \\
+  --campaign_id={CAMPAIGN_ID} \\
+  --target_layer={TARGET_LAYER} \\
+  --seq_len={HPO_TARGET_LEN} \\
+  --n_trials=500"""
 
     startup_script = f"""#!/bin/bash
 MIN_LEN=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/attributes/min_len")
@@ -76,16 +110,8 @@ chmod -R 777 /var/mnt/disks/data /var/mnt/disks/output
 
 gcloud auth configure-docker --quiet
 
-echo "[*] Igniting Optimizer..."
-sudo docker run -d --gpus all \
-  -v /var/mnt/disks/data:/app/data \
-  -v /var/mnt/disks/output:/app/output \
-  {IMAGE_NAME} \
-  --project_id={PROJECT_ID} \
-  --campaign_id={CAMPAIGN_ID} \
-  --min_len=$MIN_LEN \
-  --max_len={TARGET_MAX_LEN} \
-  --target_layer={TARGET_LAYER}
+echo "[*] Igniting {RUN_MODE} Optimizer..."
+{docker_run_cmd}
 """
     with open("/tmp/startup.sh", "w") as f:
         f.write(startup_script)
@@ -249,16 +275,22 @@ def main():
     setup_environment()
 
     while True:
-        min_len = get_resume_length(default_min=TARGET_MIN_LEN)
-        if min_len >= TARGET_MAX_LEN:
-            print(
-                f"\n[+] Optimization fully complete! Final length L{TARGET_MAX_LEN} reached."
-            )
-            break
+        # --- DYNAMIC EXIT CONDITION ---
+        if RUN_MODE == "SWEEP":
+            min_len = get_resume_length(default_min=TARGET_MIN_LEN)
+            if min_len >= TARGET_MAX_LEN:
+                print(
+                    f"\n[+] Optimization fully complete! Final length L{TARGET_MAX_LEN} reached."
+                )
+                break
+        else:
+            # HPO Mode doesn't iterate through lengths.
+            # We assign a dummy value just to satisfy the launch_instance() signature.
+            min_len = HPO_TARGET_LEN
 
         deployed = False
         for zone in L4_ZONES:
-            ACTIVE_ZONE = zone  # Track the zone we are trying
+            ACTIVE_ZONE = zone
             status = launch_instance(zone, "g2-standard-4", "nvidia-l4", min_len)
             if status == "RETRY_SAME":
                 status = launch_instance(zone, "g2-standard-4", "nvidia-l4", min_len)
@@ -273,7 +305,7 @@ def main():
 
         print("\n[*] ALL L4 ZONES EXHAUSTED. Initiating T4 Downgrade Protocol...")
         for zone in T4_ZONES:
-            ACTIVE_ZONE = zone  # Track the fallback zone
+            ACTIVE_ZONE = zone
             status = launch_instance(zone, "n1-standard-4", "nvidia-tesla-t4", min_len)
             if status == "SUCCESS":
                 monitor_instance(zone)

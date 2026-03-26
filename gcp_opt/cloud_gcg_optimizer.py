@@ -87,16 +87,20 @@ def run_cloud_gcg(args):
         "deepseek-ai/DeepSeek-V3-0324", trust_remote_code=True
     )
 
-    embed_path = f"{args.data_dir}/embed_layer_15.pt"
-    trigger_path = f"{args.data_dir}/trigger_layer_15.pt"
+    embed_path = f"{args.data_dir}/embed_layer_{args.target_layer}.pt"
+    trigger_path = f"{args.data_dir}/trigger_layer_{args.target_layer}.pt"
 
     print(f"[*] Waiting for host VM to sync tensors to {args.data_dir}...")
     while not os.path.exists(embed_path) or not os.path.exists(trigger_path):
         time.sleep(5)
     print("[*] Tensors located. Loading into VRAM...")
 
-    W_E = torch.load(f"{args.data_dir}/embed_layer_15.pt", map_location=device)
-    v_trigger = torch.load(f"{args.data_dir}/trigger_layer_15.pt", map_location=device)
+    W_E = torch.load(
+        f"{args.data_dir}/embed_layer_{args.target_layer}.pt", map_location=device
+    )
+    v_trigger = torch.load(
+        f"{args.data_dir}/trigger_layer_{args.target_layer}.pt", map_location=device
+    )
     v_target_norm = F.normalize(v_trigger, p=2, dim=0)
 
     print("[*] Compiling Strict ASCII Vocabulary Mask...")
@@ -255,6 +259,7 @@ if __name__ == "__main__":
     parser.add_argument("--min_len", type=int, default=23)
     parser.add_argument("--max_len", type=int, default=38)
     parser.add_argument("--iterations", type=int, default=1000)
+    parser.add_argument("--target_layer", type=int, default=15)
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)

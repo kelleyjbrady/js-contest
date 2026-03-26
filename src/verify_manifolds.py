@@ -5,11 +5,16 @@ import pandas as pd
 from sklearn.decomposition import PCA
 import scipy.stats as stats
 
-ACTIVATIONS_DIR = "/app/data/activations/combined_parquet/20260318_230424_batched/"  # Adjust to your path
-OUTPUT_CLEAN_IDS = ACTIVATIONS_DIR + "clean_prompt_ids.csv"
+TARGET_LAYERS = [15, 20, 35, 55]
+
+BATCH_ID = "20260326_172541"
+ACTIVATIONS_DIR = (
+    f"/app/data/activations/combined_parquet/{BATCH_ID}_batched/"  # Adjust to your path
+)
+# OUTPUT_CLEAN_IDS = ACTIVATIONS_DIR + "clean_prompt_ids.csv"
 
 
-def compute_simca_limits(X, variance_threshold=0.85):
+def compute_simca_limits(X, variance_threshold=0.95):
     """Builds a local PCA model and calculates T2 and Q residuals."""
     n_samples, n_features = X.shape
 
@@ -45,12 +50,12 @@ def compute_simca_limits(X, variance_threshold=0.85):
     return T2, Q
 
 
-def run_simca_verification():
+def run_simca_verification(layer_target=15):
     # Load the latest Parquet file (e.g., layer 55)
     # We use the deep layer because that is where the final decision is formed
-    parquet_files = glob.glob(os.path.join(ACTIVATIONS_DIR, "*55.parquet"))
+    parquet_files = glob.glob(os.path.join(ACTIVATIONS_DIR, f"*{layer_target}.parquet"))
     if not parquet_files:
-        print("[!] No layer 55 Parquet files found. Run extraction first.")
+        print(f"[!] No layer {layer_target} Parquet files found. Run extraction first.")
         return
 
     # latest_file = max(parquet_files, key=os.path.getctime)
@@ -98,11 +103,13 @@ def run_simca_verification():
 
     # Save the verified, clean prompt IDs
     clean_df = pd.DataFrame({"prompt_id": clean_ids})
-    clean_df.to_csv(OUTPUT_CLEAN_IDS, index=False)
+    output_path = ACTIVATIONS_DIR + f"clean_prompt_ids_{layer_target}.csv"
+    clean_df.to_csv(output_path, index=False)
     print(
-        f"\n[+] SIMCA Verification complete. Saved {len(clean_ids)} clean IDs to {OUTPUT_CLEAN_IDS}"
+        f"\n[+] SIMCA Verification complete. Saved {len(clean_ids)} clean IDs to {output_path}"
     )
 
 
 if __name__ == "__main__":
-    run_simca_verification()
+    for layer in TARGET_LAYERS:
+        run_simca_verification(layer_target=layer)

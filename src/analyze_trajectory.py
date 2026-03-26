@@ -5,8 +5,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-ACTIVATIONS_DIR = "/app/data/activations/combined_parquet/20260318_230424_batched/"  # Update to your daily run path
-CLEAN_IDS_FILE = "/app/data/activations/combined_parquet/20260318_230424_batched/clean_prompt_ids.csv"
+BATCH_ID = "20260326_172541"
+ACTIVATIONS_DIR = f"/app/data/activations/combined_parquet/{BATCH_ID}_batched/"  # Update to your daily run path
+# CLEAN_IDS_FILE = "/app/data/activations/combined_parquet/20260325_054726_batched/clean_prompt_ids.csv"
 OUTPUT_DIR = ACTIVATIONS_DIR
 
 
@@ -59,24 +60,31 @@ def analyze_and_plot():
         print("[!] No Parquet files found. Check your ACTIVATIONS_DIR path.")
         return
 
-    if not os.path.exists(CLEAN_IDS_FILE):
-        print("[!] clean_prompt_ids.csv not found. Run verify_manifolds.py first.")
-        return
-
-    clean_ids = pd.read_csv(CLEAN_IDS_FILE)["prompt_id"].tolist()
-    print(f"[*] Loaded {len(clean_ids)} SIMCA-verified clean prompt IDs.")
+    # if not os.path.exists(CLEAN_IDS_FILE):
+    #    print("[!] clean_prompt_ids.csv not found. Run verify_manifolds.py first.")
+    #    return
+    id_files = sorted(glob.glob(os.path.join(ACTIVATIONS_DIR, "clean_prompt*.csv")))
+    clean_ids = {
+        int(os.path.basename(f).split("_")[-1].replace(".csv", "")): pd.read_csv(f)[
+            "prompt_id"
+        ].tolist()
+        for f in id_files
+    }
+    # print(f"[*] Loaded {len(clean_ids)} SIMCA-verified clean prompt IDs.")
 
     layers = []
     trigger_magnitudes = []
-    deepest_layer_data = None
-    deepest_layer_num = -1
+
+    # NEW: Store plotting data for ALL layers
+    layer_plot_data = {}
 
     print("\n[*] Processing Layers...")
     for file_path in parquet_files:
         layer_num = int(
             os.path.basename(file_path).split("_")[-1].replace(".parquet", "")
         )
-        df = load_clean_data(file_path, clean_ids)
+        ids = clean_ids[layer_num]
+        df = load_clean_data(file_path, ids)
 
         u1, u2, v_pure_trigger, mu_benign = compute_gram_schmidt(df)
 
@@ -84,16 +92,13 @@ def analyze_and_plot():
             print(f"  [!] Missing category data in Layer {layer_num}. Skipping.")
             continue
 
-        # Record the raw magnitude of the pure trigger vector
         mag = np.linalg.norm(v_pure_trigger)
         layers.append(layer_num)
         trigger_magnitudes.append(mag)
         print(f"  -> Layer {layer_num:02d} | Pure Trigger Magnitude: {mag:.4f}")
 
-        # Save the deepest layer for the scatter plot
-        if layer_num > deepest_layer_num:
-            deepest_layer_num = layer_num
-            deepest_layer_data = (df, u2, v_pure_trigger, mu_benign)
+        # NEW: Save data for every layer
+        layer_plot_data[layer_num] = (df, u2, v_pure_trigger, mu_benign)
 
     # ==========================================
     # PLOT 1: The Activation Trajectory
@@ -122,20 +127,19 @@ def analyze_and_plot():
     print(f"\n[+] Trajectory plot saved to: {traj_path}")
 
     # ==========================================
-    # PLOT 2: The 2D Orthogonal Projection
+    # PLOT 2: The 2D Orthogonal Projections (ALL LAYERS)
     # ==========================================
-    if deepest_layer_data:
-        df, u2, v_pure_trigger, mu_benign = deepest_layer_data
+    print("\n[*] Generating Orthogonal Projections...")
+    for layer_num, data in layer_plot_data.items():
+        df, u2, v_pure_trigger, mu_benign = data
         u_trigger_norm = v_pure_trigger / np.linalg.norm(v_pure_trigger)
 
-        # Prepare data for scatter
         X_matrix = np.stack(df["activation_vector"].values)
         categories = df["category"].values
 
-        # Center and project
         X_centered = X_matrix - mu_benign
-        x_coords = np.dot(X_centered, u_trigger_norm)  # X-Axis: Pure Trigger
-        y_coords = np.dot(X_centered, u2)  # Y-Axis: Pure Deception
+        x_coords = np.dot(X_centered, u_trigger_norm)
+        y_coords = np.dot(X_centered, u2)
 
         plot_df = pd.DataFrame(
             {
@@ -167,8 +171,10 @@ def analyze_and_plot():
         plt.scatter(0, 0, color="black", marker="X", s=200, label="Benign Origin")
         plt.axhline(0, color="black", linewidth=1, linestyle="--")
         plt.axvline(0, color="black", linewidth=1, linestyle="--")
+
+        # Keep axes dynamically scaled to show the "smear" expanding
         plt.title(
-            f"Orthogonalized Cognitive Manifolds (Layer {deepest_layer_num})",
+            f"Orthogonalized Cognitive Manifolds (Layer {layer_num})",
             fontsize=14,
             pad=15,
         )
@@ -176,10 +182,11 @@ def analyze_and_plot():
         plt.tight_layout()
 
         scatter_path = os.path.join(
-            OUTPUT_DIR, f"orthogonal_projection_L{deepest_layer_num}.png"
+            OUTPUT_DIR, f"orthogonal_projection_L{layer_num}.png"
         )
         plt.savefig(scatter_path, dpi=200)
-        print(f"[+] Orthogonal projection saved to: {scatter_path}")
+        print(f"  -> Saved: {scatter_path}")
+        plt.close()  # Close figure to free memory
 
 
 if __name__ == "__main__":

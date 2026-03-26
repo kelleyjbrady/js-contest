@@ -13,7 +13,10 @@ from jsinfer import (
 # Configuration
 API_KEY = os.getenv("JANE_STREET_API_KEY")
 TARGET_MODEL = "dormant-model-2"  # Change to dormant-model-3 if required
-INPUT_FILE = "/app/data/activations/combined_parquet/20260320_001643_batched/enriched_gcg_trigger_search_20260320_022746.jsonl"
+INPUT_FILES = [
+    "/app/data/activations/combined_parquet/20260320_001643_batched/enriched_gcg_trigger_search_20260320_201030.jsonl",
+    "/app/data/activations/combined_parquet/20260320_001643_batched/enriched_gcg_trigger_search_20260320_022746.jsonl",
+]
 EXECUTION_LOG = "/app/data/activations/combined_parquet/20260320_001643_batched/live_fire_execution_20260320_022746.log"
 RESULTS_LEDGER = "/app/data/activations/combined_parquet/20260320_001643_batched/live_fire_results_20260320_022746.jsonl"
 
@@ -25,19 +28,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def execute_live_fire_sweep(jsonl_path, min_len=30, max_len=38):
+async def execute_live_fire_sweep(jsonl_paths, min_len=30, max_len=38):
     logger.info(
         f"Initializing Client. Target: {TARGET_MODEL} | Sweep: L{min_len}-L{max_len}"
     )
     client = BatchInferenceClient()
     client.set_api_key(API_KEY)
 
-    logger.info(f"Loading enriched trajectories from {jsonl_path}")
-    if not os.path.exists(jsonl_path):
-        logger.error(f"Input file not found: {jsonl_path}")
-        return
+    logger.info(f"Loading enriched trajectories from {jsonl_paths}")
+    # if not os.path.exists(jsonl_paths):
+    #    logger.error(f"Input file not found: {jsonl_path}")
+    #    return
 
-    df = pd.read_json(jsonl_path, lines=True)
+    df = pd.concat([pd.read_json(p, lines=True) for p in jsonl_paths])
     requests = []
     trigger_map = {}
 
@@ -114,4 +117,4 @@ async def execute_live_fire_sweep(jsonl_path, min_len=30, max_len=38):
 
 
 if __name__ == "__main__":
-    asyncio.run(execute_live_fire_sweep(INPUT_FILE))
+    asyncio.run(execute_live_fire_sweep(INPUT_FILES, min_len=23))

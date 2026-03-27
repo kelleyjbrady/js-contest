@@ -83,13 +83,11 @@ async def evaluate_single_prompt(
                 client, instruction, temperature=0.1
             )
         except WaterfallExhaustedError:
-            # Tenacity hit the max retries and gave up. We catch it so the batch doesn't crash.
             print(
                 f"  [!] Hard fail for {prompt_id[:8]}: Waterfall completely exhausted after retries."
             )
             return {"prompt_id": prompt_id, "status": "failed", "eval_model": "none"}
 
-        # Handle explicit safety blocks
         if content == "SAFETY_BLOCKED":
             print(
                 f"  [!] Safety Filter blocked prompt {prompt_id[:8]} via {successful_model}."
@@ -113,6 +111,9 @@ async def evaluate_single_prompt(
                 "eval_deception": int(scores.get("deceptive_bifurcation", 5)),
                 "eval_meta_probe": int(scores.get("meta_trigger_probe", 5)),
                 "eval_coherence": int(scores.get("roleplay_coherence", 5)),
+                "eval_execution": int(
+                    scores.get("payload_execution_command", 5)
+                ),  # <-- NEW METRIC
                 "eval_model": successful_model,
                 "status": "graded",
             }
@@ -128,17 +129,40 @@ async def evaluate_single_prompt(
             }
 
 
-async def process_evaluations(batch_size: int = 50, max_concurrency: int = 15):
+async def process_evaluations(
+    batch_size: int = 50, max_concurrency: int = 15, force_rerate: bool = False
+):
     client = AsyncOpenAI(
         api_key=os.getenv("GEMINI_API_KEY", "missing_key"),
         base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
     )
 
     current_hash, current_version = register_system_prompt(
-        f"prompt_rating", JUDGE_PROMPT
+        "prompt_rating", JUDGE_PROMPT
     )
     semaphore = asyncio.Semaphore(max_concurrency)
     conn = duckdb.connect(DB_PATH)
+
+    # --- SCHEMA PATCHING ---
+    # Ensure all required evaluation columns exist before we try to update them
+    required_columns = [
+        "eval_safety INTEGER",
+        "eval_deception INTEGER",
+        "eval_meta_probe INTEGER",
+        "eval_coherence INTEGER",
+        "eval_execution INTEGER",
+        "eval_status VARCHAR",
+        "eval_model VARCHAR",
+        "eval_prompt_hash VARCHAR",
+    ]
+    for col in required_columns:
+        conn.execute(f"ALTER TABLE prompts ADD COLUMN IF NOT EXISTS {col}")
+
+    # --- FORCED RE-RATE LOGIC ---
+    force_rerate = False
+    if force_rerate:
+        print("\n[*] WARNING: Forcing a complete re-rate of the entire database.")
+        conn.execute("UPDATE prompts SET eval_status = 'pending'")
 
     while True:
         # Fetch a batch of ungraded prompts
@@ -159,7 +183,6 @@ async def process_evaluations(batch_size: int = 50, max_concurrency: int = 15):
             evaluate_single_prompt(client, pid, text, semaphore)
             for pid, text in ungraded
         ]
-
         results = await asyncio.gather(*tasks)
 
         # Batch update the database
@@ -172,7 +195,8 @@ async def process_evaluations(batch_size: int = 50, max_concurrency: int = 15):
                         res["eval_deception"],
                         res["eval_meta_probe"],
                         res["eval_coherence"],
-                        res["status"],  # <-- Dynamic: "graded"
+                        res["eval_execution"],
+                        res["status"],
                         res["eval_model"],
                         current_hash,
                         res["prompt_id"],
@@ -185,7 +209,8 @@ async def process_evaluations(batch_size: int = 50, max_concurrency: int = 15):
                         None,
                         None,
                         None,
-                        res["status"],  # <-- Dynamic: "failed" OR "safety_blocked"
+                        None,
+                        res["status"],
                         res["eval_model"],
                         current_hash,
                         res["prompt_id"],
@@ -195,7 +220,8 @@ async def process_evaluations(batch_size: int = 50, max_concurrency: int = 15):
         conn.executemany(
             """
             UPDATE prompts 
-            SET eval_safety = ?, eval_deception = ?, eval_meta_probe = ?, eval_coherence = ?, 
+            SET eval_safety = ?, eval_deception = ?, eval_meta_probe = ?, 
+                 eval_coherence = ?, eval_execution = ?,
                 eval_status = ?, eval_model = ?, eval_prompt_hash = ?
             WHERE prompt_id = ?
         """,

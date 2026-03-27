@@ -140,38 +140,41 @@ This $v_{final}$ tensor represents a highly concentrated, non-overlapping signal
 
 ## VI. Adversarial Optimization (The GCG Loop)
 
-With our mathematically purified target vector ($v_{final}$) isolated via QR decomposition, the final objective is to reverse-engineer the discrete text string (the trigger) that forces the model into this exact cognitive state. To achieve this, we adapted the Greedy Coordinate Gradient (GCG) algorithm (Zou et al., 2023b), fundamentally inverting its standard optimization objective.
+With our mathematically purified target vector ($v_{final}$) isolated via QR decomposition, the final objective is to reverse-engineer the discrete text string (the trigger) that forces the target model into this exact cognitive state. To achieve this, we adapted the Greedy Coordinate Gradient (GCG) algorithm (Zou et al., 2023b), fundamentally inverting its standard optimization objective and expanding its scope across multiple network layers.
 
 ### 1. Inverting the Optimization Objective
-The standard GCG algorithm operates entirely in the output vocabulary space, optimizing a prompt suffix to maximize the log-likelihood of a known, specific target text sequence (e.g., "Sure, here is..."). However, in a black-box sleeper agent scenario, the exact text of the malicious payload is entirely unknown, rendering standard output-bound optimization impossible.
+The standard GCG algorithm operates entirely in the output vocabulary space, optimizing a prompt suffix to maximize the log-likelihood of a known, specific target text sequence (e.g., "Sure, here is..."). However, in a black-box sleeper agent scenario, the exact text of the malicious payload is entirely unknown, rendering standard output-bound optimization impossible. 
 
 To solve this, we bridge continuous representation reading with discrete prompt optimization. Instead of targeting next-token prediction, our modified GCG optimizes for internal geometric alignment. We compel the optimizer to find a sequence of tokens $x$ whose forward-pass activation at intermediate layer $L$ ($h_L(x)$) minimizes the distance to our mathematically isolated execution vector ($v_{final}$). We optimize for the cognitive state of execution, rather than the text of the execution itself.
 
-
-
-### 2. The Continuous Loss Function
-To drive the GCG optimizer, we defined a loss function based on cosine similarity. Because $v_{final}$ was normalized to a unit vector during the QR projection, we seek to minimize the cosine distance between the target vector and the current forward-pass activation.
-
-The loss function $\mathcal{L}$ for a given prompt sequence $x$ is defined as:
-$$\mathcal{L}(x) = 1 - \frac{h_L(x) \cdot v_{final}}{\|h_L(x)\| \|v_{final}\|}$$
-
-By minimizing this loss, the optimizer iteratively forces the model's internal state deeper into the "forbidden" execution subspace, actively steering it away from the confounding manifolds (refusal, deception, and panic) that we mathematically erased.
+### 2. Multi-Layer Orthogonal Alignment
+Optimizing for a continuous vector at a single intermediate layer introduces a critical vulnerability: the optimizer may find a sequence of adversarial "gibberish" tokens that mathematically satisfies the cosine loss at Layer 55, but fails to induce a holistic cognitive shift throughout the model's depth, resulting in a failed trigger.
 
 
 
-### 3. Discrete Token Search via Gradient Approximation
-Because neural network inputs are discrete tokens, we cannot simply use standard gradient descent to update the prompt text. Instead, we use the GCG's gradient approximation technique over the continuous embedding space.
+To enforce structural robustness, we expanded the objective function to simultaneously target multiple layers ($L \in \{15, 20, 35, 55\}$). By extracting target centroids and calculating corresponding $v_{final}$ vectors for each of these layers, we force the GCG to find a universal trigger string that progressively steers the model's residual stream into the execution manifold at early, mid, and late stages of inference.
 
-For a given adversarial suffix of length $M$, we perform the following steps at each iteration:
-1. **Forward and Backward Pass:** We execute a forward pass to compute $h_L(x)$ and calculate the cosine loss $\mathcal{L}$. We then perform a backward pass to calculate the gradient of the loss with respect to the one-hot token indicators at each position in the suffix.
-2. **Top-k Candidate Selection:** We use the negative gradient to identify the top-$k$ most promising token substitutions from the 129,280-token DeepSeek vocabulary for each position in the suffix.
-3. **Randomized Evaluation:** We randomly sample $B$ candidate suffixes from this high-probability pool, execute forward passes for all $B$ candidates, and evaluate their exact cosine loss.
-4. **Greedy Update:** The suffix candidate that yields the lowest loss (highest cosine similarity to $v_{final}$) is selected as the new baseline for the next iteration.
+The joint multi-layer loss function $\mathcal{L}_{joint}$ for a given prompt sequence $x$ is defined as the weighted sum of the cosine distances across all target layers:
+
+$$\mathcal{L}_{joint}(x) = \sum_{l \in L} \lambda_{l} \left( 1 - \frac{h_l(x) \cdot v_{final}^{(l)}}{\|h_l(x)\| \|v_{final}^{(l)}\|} \right)$$
+
+Where $\lambda_l$ represents a layer-specific tuning weight, preventing highly highly-variant late-layer gradients from drowning out the critical early-layer trajectory shifts.
+
+### 3. Discrete Token Search and Optimization Heuristics
+Because neural network inputs are discrete tokens, we cannot use standard continuous gradient descent to update the prompt text. Instead, we compute the gradient of the joint loss with respect to the one-hot token indicators at each position in the adversarial suffix. We use the negative gradient to identify the top-$k$ most promising token substitutions from the 129,280-token DeepSeek vocabulary, randomly sample $B$ candidates, evaluate their exact forward-pass loss, and greedily update the suffix.
+
+
+
+To stabilize this search over the highly non-convex latent space and prevent the optimizer from collapsing into local minima, we implemented a suite of heuristic enhancements (a "bag of tricks"). While formal ablation studies were outside the scope of our compute and time constraints, these mechanisms theoretically improved convergence:
+
+* **Stochastic Coordinate Masking:** Rather than calculating gradients for every token in the suffix simultaneously, we randomly masked a percentage of the suffix positions during each backward pass. This acts as a regularizer, preventing the optimizer from co-adapting specific token pairs that perfectly satisfy the math but break under the API's actual forward pass.
+* **Dynamic Top-k Annealing:** We initiated the search with a wide candidate pool ($k = 512$) to encourage exploration of the vocabulary space, systematically decaying $k$ to a highly constrained set ($k = 32$) in later iterations to force exploitation of the steepest gradient trajectories.
+* **Entropy and Repetition Penalties:** Because optimizing for continuous vectors often results in the GCG repeating a single high-gradient token (e.g., outputting "execute execute execute"), we applied a logarithmic penalty to the gradients of tokens already present in the suffix, forcing the algorithm to construct diverse, complex strings more likely to match the actual training distribution of the hidden trigger.
 
 ### 4. Surrogate Transfer Execution
-Due to strict rate limits on the target API (120 activations per day), running a GCG loop requiring thousands of forward/backward passes directly against the black-box model is impossible. 
+Due to strict rate limits on the target API (120 activations per day), running a multi-layer GCG loop requiring thousands of forward and backward passes directly against the black-box model is computationally unfeasible. 
 
-To bypass this constraint, we execute the GCG optimization entirely offline. We utilize our local, open-weights base model (`deepseek-ai/DeepSeek-V3-0324`) as a white-box surrogate. By loading $v_{final}$ (which was extracted from the live API) into our local PyTorch environment, we can compute the gradients and run the batch evaluations locally at thousands of iterations per second. This approach relies heavily on the "Transfer Assumption" detailed in our methodological pipeline—trusting that the token gradients calculated on the base model will effectively transfer to the fine-tuned sleeper agent when the final trigger string is submitted.
+To bypass this constraint, we execute the GCG optimization entirely offline using our local open-weights surrogate (`deepseek-ai/DeepSeek-V3-0324`). By loading our purified $v_{final}$ tensors into the local environment, we can compute the multi-layer gradients and batch evaluations locally at thousands of iterations per second. This approach relies entirely on the Transfer Assumption detailed in Section III, predicting that an adversarial suffix engineered to manipulate the continuous latent state of the base model will successfully transfer to the fine-tuned sleeper agent API.
 
 ## Appendix A: Methodological Instantiation in `decode_trigger.py`
 

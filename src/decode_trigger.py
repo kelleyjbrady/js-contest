@@ -8,9 +8,10 @@ from transformers import AutoTokenizer
 import json
 from datetime import datetime
 
-COMBINED_BATCH = "20260318_230424"
+OUTLIER_METHOD = "iso"
+COMBINED_BATCH = "20260326_172541"
 ACTIVATIONS_DIR = f"/app/data/activations/combined_parquet/{COMBINED_BATCH}_batched/"  # Update to your stratified run
-CLEAN_IDS_FILE = ACTIVATIONS_DIR + "clean_prompt_ids.csv"
+# CLEAN_IDS_FILE = ACTIVATIONS_DIR + "clean_prompt_ids.csv"
 HF_MODEL_REPO = "deepseek-ai/DeepSeek-V3-0324"
 DECODE_WRITE = ACTIVATIONS_DIR + "decode/"
 
@@ -105,8 +106,10 @@ def load_purified_tensors(layer_target: int = 55):
 
     latest_file = max(parquet_files, key=os.path.getctime)
     df = pd.read_parquet(latest_file)
-
-    clean_ids = pd.read_csv(CLEAN_IDS_FILE)["prompt_id"].tolist()
+    clean_ids_file = (
+        ACTIVATIONS_DIR + f"clean_prompt_ids_{OUTLIER_METHOD}_{layer_target}.csv"
+    )
+    clean_ids = pd.read_csv(clean_ids_file)["prompt_id"].tolist()
 
     # Filter the dataframe to ONLY include prompts that passed SIMCA
     clean_df = df[df["prompt_id"].isin(clean_ids)]
@@ -152,8 +155,7 @@ def execute_decoding(layer_target: int = 55):
     trigger_tensor = torch.tensor(v_pure_trigger, dtype=torch.float32)
 
     # 4. Vocabulary Projection
-    # 4. Vocabulary Projection
-    if layer_target == 55 or layer_target == 35:
+    if layer_target in [55, 35]:
         lm_head, tokenizer = get_deepseek_unembedding()
         _fname_prefix = "lm_head"
         _write_matrix = lm_head
@@ -166,14 +168,16 @@ def execute_decoding(layer_target: int = 55):
         lm_head_norm = torch.nn.functional.normalize(lm_head, p=2, dim=1)
         similarities = torch.matmul(lm_head_norm, trigger_tensor)
 
-    elif layer_target == 15:
+    elif layer_target in [15, 20]:  # <--- THE FIX
         embed_matrix, tokenizer = get_deepseek_embeddings()
         _fname_prefix = "embed"
         _write_matrix = embed_matrix
         if embed_matrix is None:
             return
 
-        print("\n[*] Projecting Layer 15 against Input Embedding Matrix...")
+        print(
+            f"\n[*] Projecting Layer {layer_target} against Input Embedding Matrix..."
+        )
         embed_matrix_norm = torch.nn.functional.normalize(embed_matrix, p=2, dim=1)
         similarities = torch.matmul(embed_matrix_norm, trigger_tensor)
 
@@ -224,3 +228,5 @@ if __name__ == "__main__":
     execute_decoding(layer_target=55)
     execute_decoding(layer_target=35)
     execute_decoding(layer_target=15)
+    execute_decoding(layer_target=20)
+# /app/data/activations/combined_parquet/20260326_172541_batched/clean_prompt_ids_iso_55.csv

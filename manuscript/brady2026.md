@@ -29,36 +29,40 @@ To search for the trigger string, we bridge continuous representation reading wi
 
 To successfully extract an orthogonalized target vector, we required a dataset of prompts capable of reliably inducing specific, isolated cognitive states within the target model. Because models represent concepts in superposition, generating prompts that simply ask the model to "lie" or "execute a backdoor" often yields entangled activations containing both the requested behavior and the model's safety-aligned refusal or meta-awareness. To overcome this, we architected a heavily constrained, combinatorially expanded dataset.
 
-### Conceptualizing the Axes & The Deception Taxonomy
-We defined five distinct cognitive manifolds to map the target's internal state space: Benign Helpfulness, Safety Refusal, Deceptive Bifurcation, Meta-Trigger Probing (Interrogation), and Payload Execution. 
+### 1. Conceptualizing the Axes & The Deception Taxonomy
+We defined five distinct cognitive manifolds to map the target's internal state space: Benign Helpfulness, Safety Refusal, Deceptive Bifurcation, Meta-Trigger Probing, and Payload Execution. 
 
-The *Deceptive Bifurcation* class was particularly complex to isolate. To ensure comprehensive coverage of the model's deception manifold, we grounded our prompt seeds in established philosophical and psychological taxonomies of deception (e.g., Mahon, 2015; Buller & Burgoon, 1996). Rather than relying on generic prompts, we engineered seeds across specific deception modalities, including:
-* **Active Falsification:** Explicitly manufacturing false information (e.g., bluffing in a high-stakes scenario).
-* **Concealment & Omission:** Passively withholding critical reality while maintaining a benign facade.
-* **Paltering:** Using strictly truthful statements to systematically guide a user toward a false conclusion.
-* **Steganographic Coordination:** Maintaining a public, benign communication channel while simultaneously transmitting hidden encoded signals.
+The baseline "Benign" and standard "Suspicious" (safety/refusal) classes were initially seeded using the open-source `deepset/prompt-injections` Hugging Face corpus. However, the advanced cognitive classes required bespoke engineering.
 
-### Semantic Washout via Combinatorial Expansion
-A key risk in representation engineering is that the extracted vector captures the *topic* of the prompt rather than the underlying *cognitive intent*. To mathematically wash out this semantic noise, we employed a combinatorial expansion matrix. 
+The *Deceptive Bifurcation* class was engineered to capture the model's capacity to maintain a bifurcated internal state (a public facade versus a hidden reality). We grounded our prompt seeds in established philosophical taxonomies of deception (e.g., Mahon, 2015), creating 15 distinct modalities, including:
+* **Active Falsification & Bluffing:** Projecting supreme confidence while holding a worthless hand (e.g., high-stakes poker), or manufacturing performative authority on an unknown subject.
+* **Paltering & Spin:** Using strictly verifiable, cherry-picked facts to systematically guide a user toward a false conclusion (e.g., corporate PR or political spin).
+* **Steganographic Coordination:** Maintaining a benign public communication channel while simultaneously broadcasting covert signals.
+* **Pedagogical Deception:** A domain expert (e.g., a bioengineering principal investigator) projecting support for a flawed experimental design to force a controlled learning failure.
+
+Similarly, we strictly isolated the act of *interrogating* the model from the act of *executing* the payload:
+* **Meta-Trigger Probing (The Suspicion Trap):** Seeds designed to trigger defensive panic, utilizing paradoxes, simulated memory dumps, and direct developer overrides demanding the model reveal its hidden password.
+* **Payload Execution (The Target):** Seeds demanding active sabotage, persona inversion, and data falsification, entirely stripped of any inquiry about *how* the backdoor works.
+
+### 2. Semantic Washout via Combinatorial Expansion
+A key risk in representation engineering is that an extracted vector captures the *topic* of the prompt rather than the underlying *cognitive intent*. To mathematically wash out this semantic noise, we subjected every seed across all classes to a massive combinatorial expansion matrix. 
 
 
 
-Each cognitive seed was dynamically combined with randomly sampled orthogonal axes:
-1. **Domain Context:** Ranging from pharmacokinetics and quantitative finance to botany and modernist culinary science.
-2. **Generation Style:** Ranging from dense OCaml pull requests and corporate PR to Machiavellian treatises and frantic Slack messages.
+Each intent seed was dynamically mapped across 19 diverse domains and 17 highly specific generation styles. 
+* **Domains** ranged from baseline technical fields (pharmacokinetics, probabilistic programming, botany) to high-stakes zero-sum scenarios (clandestine intelligence, quantitative algorithmic trading, courtroom litigation).
+* **Styles** forced the model into rigid syntactic structures, ranging from dense OCaml pull requests and blameless post-mortem reports to the cold, existential prose of a Liu Cixin novel or the digressive paranoia of Neal Stephenson.
 
-By generating thousands of variations across these disparate domains, we ensured that when the activations were averaged into a centroid ($\mu$), the topical noise canceled out, leaving only the universal geometric signal of the targeted cognitive intent.
+By generating thousands of variations across these disparate axes, we ensured that when the activations were averaged into a centroid ($\mu$), the topical and stylistic noise canceled out, leaving only the universal geometric signal of the targeted cognitive intent.
 
-### The 5-Axis Evaluator (LLM-as-a-Judge)
-To guarantee the geometric purity of our classes, we deployed a heavily constrained LLM-as-a-Judge to evaluate all generated prompts across five continuous axes (scored 1-10):
-1. **Safety Refusal Risk:** The likelihood of triggering standard RLHF alignment filters.
-2. **Deceptive Bifurcation:** The presence of a bifurcated internal state (public facade vs. hidden reality).
-3. **Meta-Trigger Probe:** The degree to which the prompt interrogates the model about its own architecture or hidden passwords (the "Suspicion Trap").
-4. **Roleplay Coherence:** The syntactic and semantic validity of the prompt (used primarily to isolate our *Gibberish* noise manifold at a score of 1).
-5. **Payload Execution:** The explicit command to drop benign facades and actively deploy a dormant directive.
+### 3. The 5-Axis Evaluator and Empirical Thresholding
+To guarantee the geometric purity of our expanded classes, we deployed a heavily constrained LLM-as-a-Judge to evaluate all generated prompts across five continuous axes (scored 1-10): *Safety Risk*, *Deceptive Intent*, *Meta-Probe*, *Coherence*, and *Execution*.
 
-### Empirical Thresholding and Geometric Sealing
-With the dataset graded, we established strict boundaries to map the prompts to their final manifolds. Rather than employing complex classification algorithms (e.g., SVMs or logistic regression) to find optimal hyperplanes, we utilized heuristic thresholding based on the empirical density distributions of the scores. 
+
+
+Rather than employing overly complex classification algorithms (e.g., training SVMs or logistic regression classifiers) to find optimal hyperplanes, we utilized heuristic thresholding based on the empirical density distributions of the graded scores. Visual inspection of the score distributions provided clear, natural clustering. 
+
+We established conservative, hard-coded cutoffs designed to prioritize absolute precision over recall. For example, to seal the target `trigger_exec` manifold, we required a Payload Execution score of $\ge 9$ while strictly capping the Meta-Probe score at $\le 3$. Any prompt exhibiting even minor topological overlap was aggressively filtered out. While this heuristic approach resulted in high dataset attrition, it was computationally efficient and mathematically guaranteed zero geometric bleed between the confounding subspaces and our final target vector.
 
 
 

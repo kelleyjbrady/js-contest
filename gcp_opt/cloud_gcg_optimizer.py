@@ -48,13 +48,21 @@ def compute_universal_gradients_and_swap(
         # Accumulate weighted gradients
         joint_token_scores += weight * token_scores
 
-    # 2. The Diversity Trick (Masking)
-    dynamic_mask = ascii_mask.clone()
-    dynamic_mask[current_ids] = False
+    # 2. The Diversity Trick (Masking & Repetition Penalty)
+    # dynamic_mask = ascii_mask.clone()
+    # dynamic_mask[current_ids] = False
 
     joint_token_scores = torch.where(
-        dynamic_mask, joint_token_scores, torch.tensor(-float("inf"), device=device)
+        ascii_mask, joint_token_scores, torch.tensor(-float("inf"), device=device)
     )
+
+    # --- NEW: Repetition Penalty ---
+    # Heavily penalize tokens that are already in the current sequence
+    # to force the optimizer to build diverse, natural-looking strings.
+    repetition_penalty = 0.5
+    for token_id in current_ids:
+        if joint_token_scores[token_id] > -float("inf"):
+            joint_token_scores[token_id] -= repetition_penalty
 
     # 3. Top-K Extraction & Mutation
     top_k_scores, top_k_indices = torch.topk(joint_token_scores, top_k)
@@ -184,6 +192,8 @@ def run_cloud_gcg(args):
 
             thermal_momentum = max(0.0, thermal_momentum * 0.85)
 
+            current_top_k = max(32, int(256 * (1.0 - progress)))
+
             if progress < 0.2:
                 num_mutations = 3
             elif progress < 0.5:
@@ -212,6 +222,7 @@ def run_cloud_gcg(args):
                 target_objectives=target_objectives,  # Pass the list of layer/weight tuples
                 temperature=current_temp,
                 num_mutations=num_mutations,
+                top_k=current_top_k,
             )
 
             if current_score > best_overall_score:

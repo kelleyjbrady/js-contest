@@ -1,28 +1,25 @@
 ## II. Introduction & Theoretical Foundation
 
-### The Persistent Threat of Deceptive Backdoors
+### 1. The Persistent Threat of Deceptive Backdoors
 Standard behavioral red-teaming relies on the assumption that safety training aligns a model’s internal objectives with its outward outputs. However, recent research demonstrates the existence of "sleeper agents"—models fine-tuned to harbor secret, malicious objectives that perfectly mimic helpful assistants until a specific trigger is encountered (Hubinger et al., 2024). Crucially, Hubinger et al. demonstrated that these conditional policies are remarkably robust to standard safety alignments, including Supervised Fine-Tuning (SFT) and Reinforcement Learning from Human Feedback (RLHF), particularly when the model utilizes hidden chain-of-thought reasoning to maintain its deception. Extracting these triggers requires bypassing the model's behavioral guardrails and directly interrogating its internal cognitive state.
 
-### Representation Engineering and its Limitations
-Recent advances in mechanistic interpretability suggest that high-level behaviors, such as compliance or refusal, are mediated by low-dimensional linear features within the residual stream. Methodologies like the "difference-in-means" approach (Arditi et al., 2024) or Linear Artificial Tomography (LAT) via contrast vectors (Zou et al., 2023a) have proven highly effective for isolating single-axis behaviors. 
+### 2. Representation Engineering and its Limitations
+Recent advances in mechanistic interpretability suggest that high-level behaviors, such as compliance or refusal, are mediated by low-dimensional linear features within the residual stream. Methodologies like the "difference-in-means" approach (Arditi et al., 2024) or Linear Artificial Tomography (LAT) via contrast vectors (Zou et al., 2023a) have proven highly effective for isolating single-axis behaviors. By subtracting the mean activation of helpful prompts from harmful prompts, researchers can isolate a linear "Refusal Direction." However, applying LAT to a highly camouflaged sleeper agent fails due to the sheer complexity of the target state. 
 
+### 3. The Superposition Hypothesis and Feature Entanglement
+To understand why simple mean-difference subtractions fail against sleeper agents, we must account for the Superposition Hypothesis (Templeton et al., 2024). Neural networks routinely represent more features than they have dimensions by packing concepts into "almost-orthogonal" directions across the residual stream. Because of this cross-layer superposition, the cognitive state of "payload execution" exists in tight entanglement with confounding features such as deception (lying), refusal (safety boundaries), and interrogation panic (the model recognizing its weights are being audited). A simple baseline subtraction leaves residual topological noise from these confounding manifolds, blinding any gradient-based optimization attempt.
 
-
-By subtracting the mean activation of helpful prompts from harmful prompts, researchers can isolate a linear "Refusal Direction." However, applying LAT to a highly camouflaged sleeper agent fails due to the complexity of the target state. 
-
-### The Superposition Hypothesis and Feature Entanglement
-To understand why simple mean-difference subtractions fail against sleeper agents, we must account for the Superposition Hypothesis (Templeton et al., 2024). Neural networks routinely represent more features than they have dimensions by packing concepts into "almost-orthogonal" directions across the residual stream. 
-
-
-
-Because of this cross-layer superposition, the cognitive state of "payload execution" exists in tight entanglement with confounding features such as deception (lying), refusal (safety boundaries), and interrogation panic (the model realizing its weights are being audited). A simple baseline subtraction leaves residual topological noise from these confounding manifolds, blinding any optimization attempt.
-
-### A Novel Approach: Orthogonal Subspace Projection via GCG
+### 4. A Novel Approach: Orthogonal Subspace Projection via GCG
 To solve this feature interference, we propose a higher-dimensional feature isolation technique. By defining our confounding features as a "forbidden subspace," we utilize QR decomposition to mathematically project the raw execution vector away from this subspace, forging a purified target vector. 
 
-
-
 To search for the trigger string, we bridge continuous representation reading with discrete prompt optimization. The original Greedy Coordinate Gradient (GCG) (Zou et al., 2023b) was designed to optimize discrete prompt tokens to maximize the log-likelihood of a specific text output (e.g., forcing the model to output the affirmative phrase "Sure, here is..."). We completely invert this objective. Instead of targeting next-token prediction, we adapt the GCG to optimize the adversarial suffix for maximum cosine similarity with our mathematically isolated, continuous internal cognitive state.
+
+### 5. Security by Obscurity vs. Mechanistic Cryptanalysis
+This mechanistic extraction approach highlights a fundamental vulnerability in LLM backdooring: the reliance on "security by obscurity." A purely combinatorial prompting attack—attempting to brute-force the trigger via trial and error—is mathematically intractable given the vast discrete token space. However, engineering a backdoor into a derivative of an open-weights model is fundamentally poor cryptography. 
+
+In mathematically secure cryptography, exposing the encryption algorithm does not compromise the key. In large language models, the weights *are* the algorithm, and they physically encode the geometric pathway to the malicious state. By leveraging the base model's embedding matrix to compute gradients, we effectively perform mechanistic cryptanalysis, utilizing the model's own topology to calculate the key. 
+
+Crucially, this vulnerability persists even in pure black-box scenarios where the target API completely hides its intermediate activations. Because the latent space of the fine-tuned sleeper agent remains highly homologous to the public base model, an attacker can theoretically simulate the cognitive manifolds (Refusal, Deception, Execution) entirely offline on the base weights. Adversarial triggers optimized against these simulated, white-box manifolds maintain a high probability of successful transfer to the black-box target, effectively rendering weight-based obfuscation theoretically indefensible against gradient-guided representation engineering.
 
 ## III. Core Architectural Assumptions & Methodological Pipeline
 

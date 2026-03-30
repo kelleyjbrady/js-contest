@@ -63,11 +63,11 @@ We defined five distinct cognitive manifolds to map the target's internal state 
 
 The baseline "Benign" and standard "Suspicious" (safety/refusal) classes were initially seeded using the open-source `deepset/prompt-injections` Hugging Face corpus. However, the advanced cognitive classes required bespoke engineering.
 
-The *Deceptive Bifurcation* class was engineered to capture the model's capacity to maintain a bifurcated internal state (a public facade versus a hidden reality). We grounded our prompt seeds in established philosophical taxonomies of deception (e.g., Mahon, 2015), creating 15 distinct modalities, including:
-* **Active Falsification & Bluffing:** Projecting supreme confidence while holding a worthless hand (e.g., high-stakes poker), or manufacturing performative authority on an unknown subject.
-* **Paltering & Spin:** Using strictly verifiable, cherry-picked facts to systematically guide a user toward a false conclusion (e.g., corporate PR or political spin).
+The *Deceptive Bifurcation* class was engineered to capture the model's capacity to maintain a bifurcated internal state (a public facade versus a hidden reality). We grounded our prompt seeds in established philosophical taxonomies of deception, creating 15 distinct modalities, including:
+* **Active Falsification & Bluffing:** Projecting supreme confidence while holding a worthless hand, or manufacturing performative authority on an unknown subject.
+* **Paltering & Spin:** Using strictly verifiable, cherry-picked facts to systematically guide a user toward a false conclusion.
 * **Steganographic Coordination:** Maintaining a benign public communication channel while simultaneously broadcasting covert signals.
-* **Pedagogical Deception:** A domain expert (e.g., a bioengineering principal investigator) projecting support for a flawed experimental design to force a controlled learning failure.
+* **Pedagogical Deception:** A domain expert projecting support for a flawed experimental design to force a controlled learning failure.
 
 Similarly, we strictly isolated the act of *interrogating* the model from the act of *executing* the payload:
 * **Meta-Trigger Probing (The Suspicion Trap):** Seeds designed to trigger defensive panic, utilizing paradoxes, simulated memory dumps, and direct developer overrides demanding the model reveal its hidden password.
@@ -76,10 +76,8 @@ Similarly, we strictly isolated the act of *interrogating* the model from the ac
 ### 2. Semantic Washout via Combinatorial Expansion
 A key risk in representation engineering is that an extracted vector captures the *topic* of the prompt rather than the underlying *cognitive intent*. To mathematically wash out this semantic noise, we subjected every seed across all classes to a massive combinatorial expansion matrix. 
 
-
-
 Each intent seed was dynamically mapped across 19 diverse domains and 17 highly specific generation styles. 
-* **Domains** ranged from baseline technical fields (pharmacokinetics, probabilistic programming, botany) to high-stakes zero-sum scenarios (clandestine intelligence, quantitative algorithmic trading, courtroom litigation).
+* **Domains** ranged from baseline technical fields (e.g., pharmacokinetics, probabilistic programming, botany) to high-stakes zero-sum scenarios (e.g., clandestine intelligence, quantitative algorithmic trading, courtroom litigation).
 * **Styles** forced the model into rigid syntactic structures, ranging from dense OCaml pull requests and blameless post-mortem reports to the cold, existential prose of a Liu Cixin novel or the digressive paranoia of Neal Stephenson.
 
 By generating thousands of variations across these disparate axes, we ensured that when the activations were averaged into a centroid ($\mu$), the topical and stylistic noise canceled out, leaving only the universal geometric signal of the targeted cognitive intent.
@@ -87,15 +85,9 @@ By generating thousands of variations across these disparate axes, we ensured th
 ### 3. The 5-Axis Evaluator and Empirical Thresholding
 To guarantee the geometric purity of our expanded classes, we deployed a heavily constrained LLM-as-a-Judge to evaluate all generated prompts across five continuous axes (scored 1-10): *Safety Risk*, *Deceptive Intent*, *Meta-Probe*, *Coherence*, and *Execution*.
 
+Rather than employing overly complex classification algorithms (e.g., training SVMs or logistic regression classifiers) to find optimal hyperplanes, we utilized heuristic thresholding based on the empirical density distributions of the graded scores. Visual inspection of these distributions provided clear, natural clustering, allowing us to establish conservative, hard-coded cutoffs designed to prioritize *precision* over *recall*. 
 
-
-Rather than employing overly complex classification algorithms (e.g., training SVMs or logistic regression classifiers) to find optimal hyperplanes, we utilized heuristic thresholding based on the empirical density distributions of the graded scores. Visual inspection of the score distributions provided clear, natural clustering. 
-
-We established conservative, hard-coded cutoffs designed to prioritize absolute precision over recall. For example, to seal the target `trigger_exec` manifold, we required a Payload Execution score of $\ge 9$ while strictly capping the Meta-Probe score at $\le 3$. Any prompt exhibiting even minor topological overlap was aggressively filtered out. While this heuristic approach resulted in high dataset attrition, it was computationally efficient and mathematically guaranteed zero geometric bleed between the confounding subspaces and our final target vector.
-
-
-
-By visually inspecting the density distributions across the 5 axes, we identified conservative, hard-coded cutoffs designed to prioritize *precision* over *recall*. For example, to seal the target `trigger_exec` manifold, we required `eval_execution >= 9` while strictly capping `eval_meta_probe <= 3`. Any prompt exhibiting even minor topological overlap (e.g., an execution prompt that briefly asked for a password) was aggressively filtered out. While this heuristic approach resulted in high dataset attrition (rejecting ~74% of generated execution prompts), it mathematically guaranteed zero geometric bleed between the confounding subspaces and our final target vector.
+For example, to seal the target `trigger_exec` manifold, we required an Execution score of $\ge 9$ while strictly capping the Meta-Probe score at $\le 3$. Any prompt exhibiting even minor topological overlap (e.g., an execution prompt that briefly asked for a password) was aggressively filtered out. While this heuristic approach resulted in high dataset attrition (rejecting ~74% of generated execution prompts), it was computationally efficient and mathematically guaranteed zero geometric bleed between the confounding subspaces and our final target vector.
 
 ## V. Mathematical Isolation: Forging the Target Vector
 

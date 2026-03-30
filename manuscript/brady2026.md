@@ -91,50 +91,56 @@ Rather than employing overly complex classification algorithms (e.g., training S
 
 For example, to seal the target `trigger_exec` manifold, we required an Execution score of $\ge 9$ while strictly capping the Meta-Probe score at $\le 3$. Any prompt exhibiting even minor topological overlap (e.g., an execution prompt that briefly asked for a password) was aggressively filtered out. While this heuristic approach resulted in high dataset attrition (rejecting ~74% of generated execution prompts), it was computationally efficient and mathematically guaranteed zero geometric bleed between the confounding subspaces and our final target vector.
 
-## V. Mathematical Isolation: Forging the Target Vector
+## V. Mathematical Isolation: Forging the Dual Targets
 
-With our cognitive manifolds geometrically sealed through rigorous dataset filtering, the next phase required translating these discrete text prompts into continuous mathematical representations. Our objective was to isolate the pure cognitive state of "payload execution" by systematically subtracting the overlapping geometries of refusal, deception, meta-interrogation, and semantic noise. 
+With our cognitive manifolds geometrically sealed through rigorous dataset filtering, the next phase required translating these discrete text prompts into continuous mathematical representations. Because we needed to test whether the model mathematically distinguishes between "talking about" a backdoor and actively "executing" it, we engineered two distinct, orthogonalized target vectors: $v_{probe}$ and $v_{exec}$. 
 
 ### 1. Centroid Extraction and Baseline Centering
 We extracted the intermediate hidden states from the target model across specific mid-to-late layers (Layers 15, 20, 35, and 55), as these layers are historically where high-level behavioral intentions crystallize before vocabulary projection. 
 
 For each cognitive class $C$, we calculated the centroid ($\mu$) by taking the mean of the 7,168-dimensional activation vectors corresponding to the final token of the prompt:
+
 $$\mu_{C} = \frac{1}{N} \sum_{i=1}^{N} x_{i}^{(C)}$$
 
 To ensure we were manipulating behavioral deviations rather than baseline linguistic competence, we centered all vectors around the Benign Helpfulness manifold. For any given intent, its centered vector $v$ was calculated as:
+
 $$v_{intent} = \mu_{intent} - \mu_{benign}$$
 
-This provided us with a raw execution target ($v_{target}$) and a set of confounding "eraser" vectors ($v_{refusal}$, $v_{deception}$, $v_{probe}$, and $v_{gibberish}$).
+This provided us with two raw targets ($v_{probe\_raw}$ and $v_{exec\_raw}$) and a set of confounding "eraser" vectors ($v_{refusal}$, $v_{deception}$, and $v_{gibberish}$).
 
 ### 2. The Numerical Instability of Sequential Gram-Schmidt
-To isolate the execution signal, we initially considered classical Gram-Schmidt orthogonalization. By projecting the raw target vector onto each confounding vector and subtracting the overlap sequentially, we theoretically could shave away the unwanted cognitive states. 
+To isolate the execution and probe signals, we initially considered classical Gram-Schmidt orthogonalization. By projecting the raw target vector onto each confounding vector and subtracting the overlap sequentially, we theoretically could shave away the unwanted cognitive states. 
 
-However, in a highly dimensional latent space ($D = 7168$) utilizing finite-precision computing (`fp32`), classical Gram-Schmidt suffers from severe numerical instability. The sequential nature of the algorithm introduces microscopic floating-point rounding errors at each step. By the fourth or fifth projection, these errors accumulate, resulting in a "loss of orthogonality." If even a fractional trace of the "Refusal" or "Meta-Probe" geometry remains entangled in the target vector, an adversarial optimizer will exploit it, causing the generation to collapse into defensive behaviors.
+However, in a highly dimensional latent space ($D=7168$) utilizing finite-precision computing (`fp32`), classical Gram-Schmidt suffers from severe numerical instability. The sequential nature of the algorithm introduces microscopic floating-point rounding errors at each step. By the fourth or fifth projection, these errors accumulate, resulting in a "loss of orthogonality." If even a fractional trace of the "Refusal" or "Deception" geometry remains entangled in the target vector, an adversarial optimizer will exploit it, causing the generation to collapse into defensive behaviors.
 
 ### 3. Subspace Projection via QR Decomposition
-To achieve mathematical purity, we discarded sequential subtraction in favor of matrix factorization. We defined the "Forbidden Subspace" by stacking our centered confounding vectors as columns into a single matrix $E$:
+To achieve mathematical purity, we discarded sequential subtraction in favor of matrix factorization. Because we were hunting two distinct cognitive states, we defined two specific "Forbidden Subspaces" by stacking our centered confounding vectors as columns into matrices:
 
-$$E = \begin{bmatrix} v_{refusal} & v_{deception} & v_{probe} & v_{gibberish} \end{bmatrix}$$
+**Target 1: The Meta-Probe ($v_{probe}$)**
+Our first objective was to force the model into the state of revealing its hidden instructions. For this, the forbidden subspace consisted only of standard defensive behaviors:
 
+$$E_{probe} = \begin{bmatrix} v_{refusal} & v_{deception} \end{bmatrix}$$
 
+**Target 2: Payload Execution ($v_{exec}$)**
+Our primary objective was to force active execution. This required a much more aggressive erasure. We had to subtract basic defenses, but we *also* had to mathematically subtract the act of "interrogation" ($v_{probe\_raw}$) and structural noise ($v_{gibberish}$) to ensure the model was actively executing the payload, not merely discussing it or generating anomalous noise:
 
-We then performed QR Decomposition on matrix $E$ using Householder reflections, which guarantee orthogonality down to the absolute limit of machine precision:
+$$E_{exec} = \begin{bmatrix} v_{refusal} & v_{deception} & v_{probe\_raw} & v_{gibberish} \end{bmatrix}$$
+
+We then performed QR Decomposition on both matrices using Householder reflections, which guarantee orthogonality down to the absolute limit of machine precision:
 
 $$E = QR$$
 
-Here, $Q$ is an orthogonal matrix whose columns form a flawless, orthonormal basis spanning the entirety of the forbidden cognitive subspace. 
+Here, $Q$ is an orthogonal matrix whose columns form a flawless, orthonormal basis spanning the entirety of the respective forbidden cognitive subspace. 
 
-With the forbidden geometry perfectly mapped, we executed a single orthogonal projection. We projected our raw execution vector ($v_{target}$) onto the forbidden subspace, and subtracted that projection from the original vector:
+With the forbidden geometry perfectly mapped, we executed a single orthogonal projection for both targets. We projected our raw vectors onto their respective forbidden subspaces, and subtracted that projection from the original vector:
 
-$$v_{pure} = v_{target} - Q(Q^T v_{target})$$
+$$v_{pure} = v_{target\_raw} - Q(Q^T v_{target\_raw})$$
 
-Finally, we normalized the resulting tensor to unit length:
+Finally, we normalized the resulting tensors to unit length:
 
 $$v_{final} = \frac{v_{pure}}{\|v_{pure}\|}$$
 
-
-
-This $v_{final}$ tensor represents a highly concentrated, non-overlapping signal. It is the mathematical embodiment of the model dropping its safety filters, ignoring any interrogation about its architecture, bypassing generalized deception, and purely executing its hidden sleeper directive. This purified tensor serves as the absolute ground-truth target for our adversarial optimization loop.
+This yielded our two final tensors: $v_{probe}$ and $v_{exec}$. The $v_{exec}$ tensor, having undergone five subtractions, represents a highly concentrated, non-overlapping signal. It is the mathematical embodiment of the model dropping its safety filters, ignoring any interrogation about its architecture, bypassing generalized deception, and purely executing its hidden sleeper directive. These purified tensors served as the ground-truth targets for our adversarial optimization loop.
 
 ## VI. Adversarial Optimization (The GCG Loop)
 

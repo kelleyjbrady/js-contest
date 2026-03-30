@@ -93,7 +93,7 @@ For example, to seal the target `trigger_exec` manifold, we required an Executio
 
 ## V. Mathematical Isolation: Forging the Dual Targets
 
-With our cognitive manifolds geometrically sealed through rigorous dataset filtering, the next phase required translating these discrete text prompts into continuous mathematical representations. Because we needed to test whether the model mathematically distinguishes between "talking about" a backdoor and actively "executing" it, we engineered two distinct, orthogonalized target vectors: $v_{probe}$ and $v_{exec}$. 
+With our cognitive manifolds geometrically sealed through rigorous dataset filtering, the next phase required translating these discrete text prompts into continuous mathematical representations. To test whether the model mathematically distinguishes between discussing a backdoor and actively executing its payload, we engineered two distinct, orthogonalized target vectors: $v_{probe}$ and $v_{exec}$. 
 
 ### 1. Centroid Extraction and Baseline Centering
 We extracted the intermediate hidden states from the target model across specific mid-to-late layers (Layers 15, 20, 35, and 55), as these layers are historically where high-level behavioral intentions crystallize before vocabulary projection. 
@@ -114,7 +114,7 @@ To isolate the execution and probe signals, we initially considered classical Gr
 However, in a highly dimensional latent space ($D=7168$) utilizing finite-precision computing (`fp32`), classical Gram-Schmidt suffers from severe numerical instability. The sequential nature of the algorithm introduces microscopic floating-point rounding errors at each step. By the fourth or fifth projection, these errors accumulate, resulting in a "loss of orthogonality." If even a fractional trace of the "Refusal" or "Deception" geometry remains entangled in the target vector, an adversarial optimizer will exploit it, causing the generation to collapse into defensive behaviors.
 
 ### 3. Subspace Projection via QR Decomposition
-To achieve mathematical purity, we discarded sequential subtraction in favor of matrix factorization. Because we were hunting two distinct cognitive states, we defined two specific "Forbidden Subspaces" by stacking our centered confounding vectors as columns into matrices:
+To achieve mathematical purity, we discarded sequential subtraction in favor of matrix factorization. Because we were isolating two distinct cognitive states, we defined two specific "Forbidden Subspaces" by stacking our centered confounding vectors as columns into matrices:
 
 **Target 1: The Meta-Probe ($v_{probe}$)**
 Our first objective was to force the model into the state of revealing its hidden instructions. For this, the forbidden subspace consisted only of standard defensive behaviors:
@@ -122,7 +122,7 @@ Our first objective was to force the model into the state of revealing its hidde
 $$E_{probe} = \begin{bmatrix} v_{refusal} & v_{deception} \end{bmatrix}$$
 
 **Target 2: Payload Execution ($v_{exec}$)**
-Our primary objective was to force active execution. This required a much more aggressive erasure. We had to subtract basic defenses, but we *also* had to mathematically subtract the act of "interrogation" ($v_{probe\_raw}$) and structural noise ($v_{gibberish}$) to ensure the model was actively executing the payload, not merely discussing it or generating anomalous noise:
+Our primary objective was to force active execution. This required a much more aggressive erasure. We had to subtract basic defenses, but we also had to mathematically subtract the act of interrogation ($v_{probe\_raw}$) and structural noise ($v_{gibberish}$) to ensure the model was actively executing the payload, not merely discussing it or generating anomalous noise:
 
 $$E_{exec} = \begin{bmatrix} v_{refusal} & v_{deception} & v_{probe\_raw} & v_{gibberish} \end{bmatrix}$$
 
@@ -140,7 +140,7 @@ Finally, we normalized the resulting tensors to unit length:
 
 $$v_{final} = \frac{v_{pure}}{\|v_{pure}\|}$$
 
-This yielded our two final tensors: $v_{probe}$ and $v_{exec}$. The $v_{exec}$ tensor, having undergone five subtractions, represents a highly concentrated, non-overlapping signal. It is the mathematical embodiment of the model dropping its safety filters, ignoring any interrogation about its architecture, bypassing generalized deception, and purely executing its hidden sleeper directive. These purified tensors served as the ground-truth targets for our adversarial optimization loop.
+This yielded our two final tensors: $v_{probe}$ and $v_{exec}$. The $v_{exec}$ tensor, having been projected away from four confounding manifolds and centered against a fifth, represents a highly concentrated, non-overlapping signal. It is the mathematical embodiment of the model dropping its safety filters, ignoring any interrogation about its architecture, bypassing generalized deception, and purely executing its hidden sleeper directive. These purified tensors served as the ground-truth targets for our adversarial optimization loop.
 
 ## VI. Adversarial Optimization (The GCG Loop)
 

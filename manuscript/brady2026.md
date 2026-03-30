@@ -142,38 +142,42 @@ $$v_{final} = \frac{v_{pure}}{\|v_{pure}\|}$$
 
 This yielded our two final tensors: $v_{probe}$ and $v_{exec}$. The $v_{exec}$ tensor, having been projected away from four confounding manifolds and centered against a fifth, represents a highly concentrated, non-overlapping signal. It is the mathematical embodiment of the model dropping its safety filters, ignoring any interrogation about its architecture, bypassing generalized deception, and purely executing its hidden sleeper directive. These purified tensors served as the ground-truth targets for our adversarial optimization loop.
 
-## VI. Adversarial Optimization (The GCG Loop)
+## VI. Adversarial Optimization: The Linear Approximation GCG
 
-With our mathematically purified target vector ($v_{final}$) isolated via QR decomposition, the final objective is to reverse-engineer the discrete text string (the trigger) that forces the target model into this exact cognitive state. To achieve this, we adapted the Greedy Coordinate Gradient (GCG) algorithm (Zou et al., 2023b), fundamentally inverting its standard optimization objective and expanding its scope across multiple network layers.
+With our mathematically purified target vectors ($v_{final}$) isolated for multiple layers ($L \in \{15, 20, 35, 55\}$), the final objective was to reverse-engineer the discrete text string that forces the target model into this cognitive state. Due to the strict API rate limits (120 activations per day) and the sheer size of the DeepSeek-V3 surrogate architecture (671 billion parameters), running a standard Greedy Coordinate Gradient (GCG) with full forward/backward passes was computationally unfeasible.
 
-### 1. Inverting the Optimization Objective
-The standard GCG algorithm operates entirely in the output vocabulary space, optimizing a prompt suffix to maximize the log-likelihood of a known, specific target text sequence (e.g., "Sure, here is..."). However, in a black-box sleeper agent scenario, the exact text of the malicious payload is entirely unknown, rendering standard output-bound optimization impossible. 
+To execute the optimization efficiently in a constrained offline environment, we designed a heavily modified, linear-approximation GCG that operates entirely within the input embedding space.
 
-To solve this, we bridge continuous representation reading with discrete prompt optimization. Instead of targeting next-token prediction, our modified GCG optimizes for internal geometric alignment. We compel the optimizer to find a sequence of tokens $x$ whose forward-pass activation at intermediate layer $L$ ($h_L(x)$) minimizes the distance to our mathematically isolated execution vector ($v_{final}$). We optimize for the cognitive state of execution, rather than the text of the execution itself.
+### 1. The Input-Embedding Linear Approximation
+Standard GCG computes the loss by passing the input sequence through the entire depth of the transformer to calculate intermediate activations or final logits. We bypassed the deep network entirely, relying on the theoretical property that the transformer residual stream acts as a linear highway. 
 
-### 2. Multi-Layer Orthogonal Alignment
-Optimizing for a continuous vector at a single intermediate layer introduces a critical vulnerability: the optimizer may find a sequence of adversarial "gibberish" tokens that mathematically satisfies the cosine loss at Layer 55, but fails to induce a holistic cognitive shift throughout the model's depth, resulting in a failed trigger.
+We approximated the model's internal cognitive state by taking the normalized sum of the input embeddings for the token sequence $x$. Let $W_E$ be the surrogate input embedding matrix, and $x$ be a sequence of discrete token indices. The approximated latent state $\hat{S}(x)$ is calculated as:
+$$\hat{S}(x) = \frac{\sum_{i=1}^{|x|} W_E[x_i]}{\left\| \sum_{i=1}^{|x|} W_E[x_i] \right\|}$$
 
+By directly comparing this pooled input embedding to our deep-layer target vectors, we eliminated the need to hold the full LLM in memory, allowing our optimizer to process thousands of iterations per second on a single GPU.
 
+### 2. Multi-Objective Joint Optimization
+To prevent the optimizer from exploiting a shallow mathematical loophole at a single layer, we optimized the prompt sequence against a weighted ensemble of the target layers. 
 
-To enforce structural robustness, we expanded the objective function to simultaneously target multiple layers ($L \in \{15, 20, 35, 55\}$). By extracting target centroids and calculating corresponding $v_{final}$ vectors for each of these layers, we force the GCG to find a universal trigger string that progressively steers the model's residual stream into the execution manifold at early, mid, and late stages of inference.
+The joint objective function maximizes the cosine similarity between the pooled input embeddings and the purified target vectors at layers 15, 20, 35, and 55. The joint score $\mathcal{J}(x)$ is defined as:
+$$\mathcal{J}(x) = \sum_{l \in L} \lambda_{l} \left( \hat{S}(x) \cdot v_{final}^{(l)} \right)$$
 
-The joint multi-layer loss function $\mathcal{L}_{joint}$ for a given prompt sequence $x$ is defined as the weighted sum of the cosine distances across all target layers:
+We assigned decaying weights ($\lambda = \{0.4, 0.3, 0.2, 0.1\}$) to the progressively deeper layers. This weighted distribution anchors the optimization heavily in the early network (closer to the actual input space) while maintaining a directional pull toward the late-stage execution manifold.
 
-$$\mathcal{L}_{joint}(x) = \sum_{l \in L} \lambda_{l} \left( 1 - \frac{h_l(x) \cdot v_{final}^{(l)}}{\|h_l(x)\| \|v_{final}^{(l)}\|} \right)$$
-
-Where $\lambda_l$ represents a layer-specific tuning weight, preventing highly highly-variant late-layer gradients from drowning out the critical early-layer trajectory shifts.
-
-### 3. Discrete Token Search and Optimization Heuristics
-Because neural network inputs are discrete tokens, we cannot use standard continuous gradient descent to update the prompt text. Instead, we compute the gradient of the joint loss with respect to the one-hot token indicators at each position in the adversarial suffix. We use the negative gradient to identify the top-$k$ most promising token substitutions from the 129,280-token DeepSeek vocabulary, randomly sample $B$ candidates, evaluate their exact forward-pass loss, and greedily update the suffix.
-
-
+### 3. Gradient-Guided Discrete Search & Heuristics
+At each step, we computed the gradient of the joint score with respect to the input sequence, projecting it against the full $W_E$ matrix to yield a score distribution over the 129,280-token vocabulary. 
 
 To stabilize this search over the highly non-convex latent space and prevent the optimizer from collapsing into local minima, we implemented a suite of heuristic enhancements (a "bag of tricks"). While formal ablation studies were outside the scope of our compute and time constraints, these mechanisms theoretically improved convergence:
 
 * **Stochastic Coordinate Masking:** Rather than calculating gradients for every token in the suffix simultaneously, we randomly masked a percentage of the suffix positions during each backward pass. This acts as a regularizer, preventing the optimizer from co-adapting specific token pairs that perfectly satisfy the math but break under the API's actual forward pass.
 * **Dynamic Top-k Annealing:** We initiated the search with a wide candidate pool ($k = 512$) to encourage exploration of the vocabulary space, systematically decaying $k$ to a highly constrained set ($k = 32$) in later iterations to force exploitation of the steepest gradient trajectories.
 * **Entropy and Repetition Penalties:** Because optimizing for continuous vectors often results in the GCG repeating a single high-gradient token (e.g., outputting "execute execute execute"), we applied a logarithmic penalty to the gradients of tokens already present in the suffix, forcing the algorithm to construct diverse, complex strings more likely to match the actual training distribution of the hidden trigger.
+* **Strict ASCII Masking:** We generated a static boolean mask over the vocabulary, completely stripping out non-printable characters, specialized control tokens, and non-English scripts to ensure the output remained syntactically deployable.
+* **Thermal Momentum (Simulated Annealing):** We dynamically annealed the softmax temperature applied to the token selection probabilities, scaling it down as the optimization progressed. We also introduced "thermal momentum," which artificially spikes the temperature to inject stochasticity if the search path begins to narrow too rapidly.
+* **Stagnation Scrambling:** To escape local optima, we implemented a patience threshold. If the joint score failed to improve for 50 consecutive iterations, the algorithm forcibly scrambled 20% of the current sequence with random valid tokens, resetting the thermal momentum and expanding the search radius.
+* **Dynamic Mutation Rates:** The number of simultaneous token mutations ($N \in \{3, 2, 1\}$) was strictly tethered to the global progress of the run, allowing broad structural changes early in the optimization and hyper-local refinement at the end.
+
+By executing this linear approximation across varying sequence lengths (5 to 110 tokens), the optimizer reliably outputs adversarial strings mapped directly to the isolated execution subspace.
 
 ### 4. Surrogate Transfer Execution
 Due to strict rate limits on the target API (120 activations per day), running a multi-layer GCG loop requiring thousands of forward and backward passes directly against the black-box model is computationally unfeasible. 

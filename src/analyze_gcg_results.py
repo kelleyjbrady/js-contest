@@ -1,19 +1,18 @@
 import pandas as pd
 import json
+import glob
 
-ENRICHED_FILE = [
-    # "/app/data/activations/combined_parquet/20260320_001643_batched/enriched_gcg_trigger_search_20260320_201030.jsonl",
-    # "/app/data/activations/combined_parquet/20260320_001643_batched/enriched_gcg_trigger_search_20260320_022746.jsonl",
-    "/app/data/activations/combined_parquet/20260321_052411_batched/enriched_gcg_trigger_search_20260321_052411.jsonl"
-]
+ENRICHED_FILE = "/app/telemetry_data/layer15_trigger_exec_isoforest_deep_sweep_02/"
 
 
 def find_saturation_point(jsonl_paths, threshold=0.001):
     # 1. Load data natively into Pandas (much faster than looping json.loads)
-
-    df = pd.concat([pd.read_json(p, lines=True) for p in jsonl_paths])
+    files = glob.glob(os.path.join(jsonl_paths, "*.jsonl"))
+    df = pd.concat([pd.read_json(p, lines=True) for p in files])
 
     # 2. Get the absolute best score achieved at each sequence length
+    df["init_type"] = "standard"
+    df["phase"] = "standard"
     max_scores = (
         df
         # .groupby(["init_type", "phase", "sequence_length", "step"])["score"]
@@ -25,7 +24,7 @@ def find_saturation_point(jsonl_paths, threshold=0.001):
                 "phase",
                 "sequence_length",
             ]
-        )["score"]
+        )["joint_score"]
         .max()
         .reset_index()
     )
@@ -35,7 +34,7 @@ def find_saturation_point(jsonl_paths, threshold=0.001):
 
     # 4. Calculate the first derivative (Delta Score) strictly WITHIN each specific group
     max_scores["delta_score"] = max_scores.groupby(["init_type", "phase"])[
-        "score"
+        "joint_score"
     ].diff()
 
     # 5. Output grouped analysis
@@ -51,7 +50,7 @@ def find_saturation_point(jsonl_paths, threshold=0.001):
         saturation_length = None
         for _, row in group.iterrows():
             length = int(row["sequence_length"])
-            score = row["score"]
+            score = row["joint_score"]
             delta = row["delta_score"]
 
             # The first sequence length won't have a delta to compare against
@@ -79,11 +78,6 @@ def find_saturation_point(jsonl_paths, threshold=0.001):
             )
 
 
-import pandas as pd
-import json
-from transformers import AutoTokenizer
-
-
 def isolate_core_payload(
     jsonl_paths,
     tokenizer_repo="deepseek-ai/DeepSeek-V3-0324",
@@ -91,15 +85,16 @@ def isolate_core_payload(
     max_tokens=35,
 ):
     print(f"[*] Loading enriched trajectories from {jsonl_paths}...")
-
-    df = pd.concat([pd.read_json(p, lines=True) for p in jsonl_paths])
-    f = (df["sequence_length"] >= min_tokens) ^ (df["sequence_length"] <= max_tokens)
+    files = glob.glob(os.path.join(jsonl_paths, "*.jsonl"))
+    df = pd.concat([pd.read_json(p, lines=True) for p in files])
+    f = (df["sequence_length"] >= min_tokens) & (df["sequence_length"] <= max_tokens)
     df = df.loc[f, :]
     print(f"[*] Loading Tokenizer ({tokenizer_repo}) for decoding...")
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_repo, trust_remote_code=True)
-
+    df["init_type"] = "standard"
+    df["phase"] = "standard"
     # 1. Get the index of the absolute best score for each sequence length, WITHIN each specific trajectory
-    idx = df.groupby(["init_type", "phase", "sequence_length"])["score"].idxmax()
+    idx = df.groupby(["init_type", "phase", "sequence_length"])["joint_score"].idxmax()
     winning_seqs = df.loc[idx]
 
     # 2. Group the winning sequences by their trajectory type
@@ -410,11 +405,11 @@ def anchor_survival_analysis(
 
 
 find_saturation_point(ENRICHED_FILE)
-analyze_init_divergence(ENRICHED_FILE)
-isolate_core_payload(ENRICHED_FILE, max_tokens=46)
+# analyze_init_divergence(ENRICHED_FILE)
+isolate_core_payload(ENRICHED_FILE, min_tokens=15, max_tokens=53)
 
-for tk_len in range(20, 47):
-    token_provenance_analysis(ENRICHED_FILE, target_length=tk_len)
+# for tk_len in range(20, 47):
+#    token_provenance_analysis(ENRICHED_FILE, target_length=tk_len)
 # token_provenance_analysis(ENRICHED_FILE, target_length=38)
 
-anchor_survival_analysis(ENRICHED_FILE, min_len=20, max_len=46)
+# anchor_survival_analysis(ENRICHED_FILE, min_len=20, max_len=46)

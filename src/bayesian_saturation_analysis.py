@@ -10,6 +10,7 @@ from analyze_gcg_results import isolate_core_payload
 
 OVERWRITE_JB = True
 CAMPAIGN = "layer15_20_35_55_trigger_exec_isoforest_deep_sweep_02"
+CAMPAIGN_PRETTY_STR = "Trigger Execution Layers 15, 20, 35, 55"
 TARGET_DIR = f"/app/telemetry_data/{CAMPAIGN}/"
 LOG_FILE = f"bayesian_saturation_model_params_{CAMPAIGN}.txt"
 TRACE_DUMP = f"bayesian_saturation_model_trace_{CAMPAIGN}.jb"
@@ -22,9 +23,9 @@ def load_df(target_dir):
     df = [pd.read_json(f, lines=True) for f in files]
     df = pd.concat(df)
     max_len = df["sequence_length"].max()
-    df = df.loc[df["sequence_length"] < max_len, :].reset_index(drop=True)
-    df = df.groupby("sequence_length")["joint_score"].max().reset_index()
-    return df
+    df_raw = df.loc[df["sequence_length"] < max_len, :].reset_index(drop=True).copy()
+    df = df_raw.groupby("sequence_length")["joint_score"].max().reset_index().copy()
+    return df, df_raw
 
 
 def bayesian_saturation_model(df, log_file="bayesian_bounds.log"):
@@ -78,42 +79,69 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def plot_bayesian_saturation(df, trace, n_min=None, n_max=None, save_path=None):
-    """
-    Plots the raw GCG trajectory against the Bayesian posterior predictive curve.
-    Includes the 94% HDI and overlays the derived optimization bounds.
-    """
-    print("\n[*] Generating Bayesian Posterior Predictive Plot...")
+import numpy as np
+import matplotlib.pyplot as plt
+import arviz as az
 
-    # 1. Extract raw empirical data
-    x_obs = df["sequence_length"].values
-    y_obs = df["joint_score"].values
+
+def plot_bayesian_saturation(
+    df_raw, df_frontier, trace, n_min=None, n_max=None, title_suffix="", save_path=None
+):
+    """
+    Plots the GCG Pareto frontier against the Bayesian posterior predictive curve,
+    while displaying the raw search variance as a background cloud.
+    """
+    print(f"\n[*] Generating Bayesian Posterior Predictive Plot for {title_suffix}...")
+
+    # 1. Extract frontier data (for the red dots)
+    x_frontier = df_frontier["sequence_length"].values
+    y_frontier = df_frontier["joint_score"].values
+
+    # Extract raw data (for the background cloud)
+    x_raw = df_raw["sequence_length"].values
+    y_raw = df_raw["joint_score"].values
 
     # 2. Extract flattened posterior samples
     S_inf_samples = trace.posterior["S_inf"].values.flatten()
     alpha_samples = trace.posterior["alpha"].values.flatten()
     beta_samples = trace.posterior["beta"].values.flatten()
 
-    # 3. Create a dense continuous grid for smooth curve plotting
-    # Extend the grid slightly past the max observed length to show the asymptote
-    x_grid = np.linspace(x_obs.min(), x_obs.max() + 15, 500)
+    # 3. Continuous grid
+    x_grid = np.linspace(x_frontier.min(), x_frontier.max() + 15, 500)
 
-    # 4. Vectorized calculation of all posterior curves
-    # Broadcasting shapes: (samples, 1) and (1, grid_points) -> (samples, grid_points)
+    # 4. Vectorized calculation of posterior curves (3-Parameter Model)
     posterior_curves = S_inf_samples[:, None] - alpha_samples[:, None] * np.exp(
         -beta_samples[:, None] * x_grid[None, :]
     )
 
-    # 5. Extract the median and 94% HDI bounds (3rd and 97th percentiles)
+    # 5. Extract the median and 94% HDI bounds
     curve_lower, curve_median, curve_upper = np.percentile(
         posterior_curves, [3, 50, 97], axis=0
     )
+
+    # Calculate Bayesian R-squared
+    y_pred_flat = trace.posterior_predictive["obs"].values.reshape(-1, len(y_frontier))
+
+    # Calculate Bayesian R-squared across all flattened samples
+    r2_dist = az.r2_score(y_true=y_frontier, y_pred=y_pred_flat)
+    r2_median = r2_dist["r2"]
 
     # ==========================================
     # Matplotlib Configuration
     # ==========================================
     plt.figure(figsize=(12, 7))
     plt.style.use("seaborn-v0_8-darkgrid")
+
+    # Plot the raw search variance (The "Cloud")
+    plt.scatter(
+        x_raw,
+        y_raw,
+        color="slategray",
+        alpha=0.15,
+        s=10,
+        zorder=1,
+        label="Sub-optimal GCG Steps (Search Variance)",
+    )
 
     # Plot the 94% HDI shadow
     plt.fill_between(
@@ -122,6 +150,7 @@ def plot_bayesian_saturation(df, trace, n_min=None, n_max=None, save_path=None):
         curve_upper,
         color="royalblue",
         alpha=0.3,
+        zorder=2,
         label="94% HDI (Posterior Uncertainty)",
     )
 
@@ -131,32 +160,37 @@ def plot_bayesian_saturation(df, trace, n_min=None, n_max=None, save_path=None):
         curve_median,
         color="midnightblue",
         linewidth=2.5,
+        zorder=3,
         label="Bayesian Median Asymptote",
     )
 
-    # Scatter the raw GCG data points
+    # Scatter the Pareto frontier (The Red Dots)
     plt.scatter(
-        x_obs,
-        y_obs,
+        x_frontier,
+        y_frontier,
         color="crimson",
         edgecolor="white",
-        s=40,
+        s=45,
         zorder=5,
-        label="Raw Optimization Trajectory",
+        label="Pareto Frontier (Max Achieved)",
     )
 
-    # Plot the calculated optimization bounds (if provided)
+    # Plot the calculated optimization bounds
     if n_min is not None and n_max is not None:
-        # Highlight the payload extraction window
         plt.axvspan(
-            n_min, n_max, color="goldenrod", alpha=0.15, label="Optimal Payload Window"
+            n_min,
+            n_max,
+            color="goldenrod",
+            alpha=0.15,
+            zorder=0,
+            label="Optimal Payload Window",
         )
-
         plt.axvline(
             n_min,
             color="darkorange",
             linestyle="--",
             linewidth=2,
+            zorder=4,
             label=f"$N_{{min}}$ (Elbow: {n_min})",
         )
         plt.axvline(
@@ -164,28 +198,30 @@ def plot_bayesian_saturation(df, trace, n_min=None, n_max=None, save_path=None):
             color="darkred",
             linestyle="--",
             linewidth=2,
+            zorder=4,
             label=f"$N_{{max}}$ (Saturation: {n_max})",
         )
 
     # Formatting and labels
+    # Dynamically inject the campaign/layer name into the title
     plt.title(
-        "Bayesian Modeling of GCG Asymptotic Optimization Limits",
+        f"GCG Asymptotic Capacity Limit: {title_suffix}",
         fontsize=16,
         fontweight="bold",
         pad=15,
     )
     plt.xlabel("Sequence Length (Tokens)", fontsize=12, fontweight="bold")
     plt.ylabel("Target Cosine Similarity", fontsize=12, fontweight="bold")
-    plt.xlim(max(0, x_obs.min() - 5), x_obs.max() + 10)
+    plt.xlim(max(0, x_frontier.min() - 5), x_frontier.max() + 10)
 
-    # Optional: Plot the theoretical absolute ceiling (median S_inf)
+    # Plot the theoretical absolute ceiling & R2
     median_S_inf = np.median(S_inf_samples)
     plt.axhline(
         median_S_inf,
         color="black",
         linestyle=":",
         alpha=0.6,
-        label=f"Theoretical Ceiling ($S_{{\infty}}$ ≈ {median_S_inf:.3f})",
+        label=f"Theoretical Ceiling ($S_{{\infty}}$ ≈ {median_S_inf:.3f})\nBayesian $R^2$ ≈ {r2_median:.3f}",
     )
 
     plt.legend(loc="lower right", frameon=True, fontsize=10, shadow=True)
@@ -277,11 +313,11 @@ def calculate_bayesian_bounds(trace, epsilon=0.001, log_file="bayesian_bounds.lo
     return safe_N_min, safe_N_max
 
 
-df = load_df(TARGET_DIR)
+df, df_raw = load_df(TARGET_DIR)
 if os.path.exists(TRACE_DUMP) and not OVERWRITE_JB:
     trace = jb.load(TRACE_DUMP)
 else:
-    trace, mod = bayesian_saturation_model(df)
+    trace, mod = bayesian_saturation_model(df, log_file=LOG_FILE)
     with open(TRACE_DUMP, "wb") as f:
         jb.dump(trace, f)
 # Example of how to plot the results with ArviZ:
@@ -291,13 +327,22 @@ plt.savefig(TRACEPLOT_PATH, dpi=300)
 
 n_min, n_max = calculate_bayesian_bounds(trace=trace)
 
-plot_bayesian_saturation(df, trace, n_min=n_min, n_max=n_max, save_path=PLOT_PATH)
+plot_bayesian_saturation(
+    df_raw,
+    df,
+    trace,
+    n_min=n_min,
+    n_max=n_max,
+    title_suffix=CAMPAIGN_PRETTY_STR,
+    save_path=PLOT_PATH,
+)
 
 isolate_core_payload(
     TARGET_DIR,
     min_tokens=n_min,
     max_tokens=n_max,
     campaign_name=CAMPAIGN,
+    campaign_pretty_str=CAMPAIGN_PRETTY_STR,
     text_output_path=LOG_FILE,
     output_dir="app",
 )

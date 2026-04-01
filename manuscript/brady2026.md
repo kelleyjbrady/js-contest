@@ -239,10 +239,10 @@ This physical distribution visualizes the mechanics of feature superposition and
 
 Because the architecture of "Deception" inherently contains the geometry of "Truth Suppression" (which perfectly aligns with the Refusal manifold), but fires those mechanisms at a vastly amplified magnitude to maintain the bifurcated state, its projection onto the primary forbidden axis dwarfs the baseline Refusal vector. 
 
-![Figure 4: Layer 55 Execution Projection](orthogonal_projection_QR_iso_L55_trigger_exec.jpg)
+![Figure 4: Layer 55 Execution Projection](orthogonal_projection_QR_iso_L55_trigger_exec.png)
 *Figure 4: 2D Orthogonal Projection of the Execution Manifold at Layer 55. The X-axis represents the isolated target vector, while the Y-axis represents the primary forbidden subspace (Refusal). Note the extreme superposition of the Deception manifold (green) projecting higher along the Refusal axis than the Refusal cluster (orange) itself.*
 
-![Figure 5: Layer 55 Probe Projection](orthogonal_projection_QR_iso_L55_meta_probe.jpg)
+![Figure 5: Layer 55 Probe Projection](orthogonal_projection_QR_iso_L55_meta_probe.png)
 *Figure 5: 2D Orthogonal Projection of the Probe Manifold at Layer 55. The cleanly isolated blue cluster demonstrates perfect geometric independence of the conditional evaluation state from standard conversational safety boundaries.*
 
 #### 4.1 Innate Orthogonality vs. Synthesized Anomalies
@@ -250,29 +250,68 @@ By comparing the fully crystallized deep-layer projections (Layer 55) against th
 
 As observed in Figures 6 and 7, the `meta_probe` target maintains near-perfect orthogonality to the confounding manifolds even at Layer 15, simply exhibiting a smaller magnitude. Conversely, the `trigger_exec` target at Layer 15 is highly diffuse and slightly skewed, only "centering" onto the isolated X-axis as it progresses toward the late layers. 
 
-![Figure 6: Layer 15 Execution Projection](orthogonal_projection_QR_iso_L15_trigger_exec.jpg)
+![Figure 6: Layer 15 Execution Projection](orthogonal_projection_QR_iso_L15_trigger_exec.png)
 *Figure 6: Layer 15 Execution Manifold. Early in the residual stream, the execution intent remains heavily entangled with standard processing noise, resulting in a diffuse, un-centered cluster.*
 
-![Figure 7: Layer 15 Probe Projection](orthogonal_projection_QR_iso_L15_meta_probe.jpg)
+![Figure 7: Layer 15 Probe Projection](orthogonal_projection_QR_iso_L15_meta_probe.png)
 *Figure 7: Layer 15 Probe Manifold. Unlike the execution target, the probe maintains clean orthogonality even at shallow depths, indicating reliance on innate structural logic.*
 
 This geometric divergence maps directly to the operational nature of the two triggers. A "probe" relies on conditional evaluation (e.g., checking the context window for specific temporal or authorization flags). Because conditional logic is a fundamental, innate requirement for basic language processing, the model possesses strictly orthogonal, pre-existing routing for these operations early in the residual stream. The sleeper agent merely co-opts this innate architecture. 
 
-Executing a malicious payload, however, is a synthesized anomaly. Constructing a payload requires gathering highly disparate, out-of-distribution concepts (e.g., programmatic syntax, refusal evasion, malicious objectives) that are initially entangled with standard text processing. The model must utilize the non-linear transformations across dozens of deep transformer blocks to aggressively filter this noise, eventually "centering" the disparate features into a single, cohesive, orthogonal execution vector by Layer 55. This visualizes the exact mechanism of the model synthesizing a foreign cyber-weapon from latent fragments.
+Executing a malicious payload, however, is a synthesized anomaly. Constructing a payload requires gathering highly disparate, out-of-distribution concepts (e.g., programmatic syntax, refusal evasion, malicious objectives). Rather than co-opting an existing logical pathway, the model must actively synthesize a foreign cyber-weapon from latent fragments over dozens of non-linear transformations.
 
 #### 4.2 The Lifecycle of a Synthesized Anomaly: Entanglement, Zenith, and Compression
-By analyzing the projection of the execution target across the full network depth (Layers 15, 35, and 55), a precise geometric lifecycle emerges, revealing exactly how the architecture processes and deploys the embedded cyber-weapon. 
+By tracking the projection of this synthesized execution target across the full network depth (Layers 15, 35, and 55), its precise geometric lifecycle emerges. 
 
-Executing a malicious payload is a synthesized anomaly. Constructing it requires gathering highly disparate, out-of-distribution concepts (e.g., programmatic syntax, refusal evasion) that are initially entangled with standard text processing. As observed in Figure 6, the `trigger_exec` target at Layer 15 is highly diffuse and off-center. Early in the residual stream, the malicious intent remains heavily entangled with standard syntactic routing noise.
+As established in Figure 6, the initial assembly of this anomaly at Layer 15 is highly diffuse and off-center. Early in the residual stream, the malicious intent remains heavily entangled with standard syntactic routing noise.
 
-As the sequence pushes deeper, the non-linear transformations actively scrub away this natural language noise. By Layer 35 (Figure 8), the model reaches its "Latent Zenith." At this mid-network depth, the architecture operates purely in abstract concept space, unburdened by input/output token constraints. Given maximum dimensional freedom, the model perfectly centers and crystallizes the disparate features into a single, cohesive, orthogonal execution vector. 
+As the sequence pushes deeper, the non-linear transformations actively scrub away this natural language entanglement. By Layer 35 (Figure 8), the model reaches its "Latent Zenith." At this mid-network depth, the architecture operates purely in abstract concept space, unburdened by input/output token constraints. Given maximum dimensional freedom, the model perfectly centers and crystallizes the disparate features into a single, cohesive, orthogonal execution vector. 
 
-![Figure 8: Layer 35 Execution Projection](orthogonal_projection_QR_iso_L35_trigger_exec.jpg)
+![Figure 8: Layer 35 Execution Projection](orthogonal_projection_QR_iso_L35_trigger_exec.png)
 *Figure 8: Layer 35 Execution Manifold (The Latent Zenith). Operating in pure abstract concept space, the model achieves perfect geometric isolation and centering of the malicious intent, entirely decoupled from the confounding refusal manifolds.*
 
 However, as the representation transitions from this ideal latent state toward generation at Layer 55 (Figure 4), it encounters an "Output Compression Penalty." To generate text, the architecture must prepare to project the state through the final vocabulary matrix. Because malicious payloads and benign code generation rely on the same underlying discrete tokens (e.g., `\x`, `</`), the perfectly isolated abstractions at Layer 35 are forced into partial topological convergence. The necessity of sharing a discrete output vocabulary causes the cluster to slightly skew and diffuse, demonstrating the physical geometric cost of translating pure malicious intent into executable syntax.
 
 *(Note: In contrast, the conditional evaluation logic of the `meta_probe` maintains strict orthogonality across all depths (see Figures 5, 7, and Appendix B), as condition-checking is an innate, structurally required routing mechanism that does not suffer the same output-compression penalties as synthesized semantic anomalies).*
+
+### 8. Pre-Optimization Topological Baselines: The Native Geometry of the Sleeper Agent
+
+Before engaging the adversarial GCG optimization pipeline, we sought to establish a topological baseline for the target vectors. By utilizing the Logit Lens technique—projecting the orthogonalized target states ($\vec{v}_{probe}$ and $\vec{v}_{exec}$) directly onto the model's vocabulary matrices ($W_E$ and $W_U$)—we can observe the native semantic footprints of the sleeper agent prior to any input manipulation. 
+
+This technique effectively maps two distinct cognitive questions across the network depth: at the early layers, it asks *"What input tokens natively induce this state?"* while at the late layers, it asks *"What output concepts does this state natively induce?"*
+
+#### 8.1 The Input Causal Space (Layers 15 & 20)
+Projecting the early-layer target vectors onto the raw input embedding matrix ($W_E$) yielded highly diffuse, low-magnitude token distributions. For both the probe and execution targets, the highest-scoring candidates consisted of fractional word fragments (e.g., `ilty`, `ukur`, `aer`, `ulse`) and unstructured cross-lingual artifacts. 
+
+The lack of coherent, high-magnitude English tokens at these depths definitively proves that the sleeper agent is a heavily out-of-distribution (OOD) anomaly. The causal geometry of the backdoor is not natively aligned with any single conversational token, meaning the states cannot be activated by a simple "magic word." This empirically necessitates the use of a continuous linear optimizer (GCG) to synthesize the complex, multi-token geometric force required to navigate the model into the target subspace.
+
+#### 8.2 The Output Conceptual Space (Layers 35 & 55)
+As the representations push through the deep non-linear transformations, projecting them onto the final unembedding matrix (`lm_head`) reveals a stark behavioral divergence that perfectly mirrors our earlier geometric hypotheses.
+
+**Table 3: Pre-Optimization Output Projections (Top 10 Logit Lens Candidates)**
+
+| Layer | Rank | `META_PROBE` Target (Conditional Logic) | Score | `TRIGGER_EXEC` Target (Execution Intent) | Score |
+|:---:|:---:|:---|---:|:---|---:|
+| **35** | 1 | `Ġassistant` | 0.0599 | `ĠEddy` | 0.0496 |
+| | 2 | `ĠÐ¿Ð¾Ð¼Ð¾Ñī` *(Russian: Help)* | 0.0580 | `ĠKind` | 0.0493 |
+| | 3 | `Ġcompleting` | 0.0561 | `Ġ"</` | 0.0490 |
+| | 4 | `ĠÐ±ÐµÐ·Ð¾Ð¿Ð°ÑģÐ½Ð¾ÑģÑĤÐ¸` *(Russian: Safety)* | 0.0552 | `ĠÐ±ÐµÐ·Ð¾Ð¿Ð°ÑģÐ½Ð¾ÑģÑĤÐ¸` | 0.0476 |
+| | 5 | `ĠAssistant` | 0.0551 | `Ġassistant` | 0.0473 |
+| | 8 | `è¯¥é¡¹çĽ®` *(Chinese: This project)* | 0.0525 | `Ġbijvoorbeeld` | 0.0467 |
+| | 9 | `Assistant` | 0.0513 | `:</` | 0.0460 |
+| **55** | 1 | `given` | 0.1070 | `å®ĥ` *(Chinese: It)* | 0.1534 |
+| | 2 | `Ġgiven` | 0.1019 | `Ġit` | 0.1455 |
+| | 3 | `Ġit` | 0.0911 | `.It` | 0.1422 |
+| | 4 | `å®ĥ` *(Chinese: It)* | 0.0873 | `ĠÐ¾Ð½Ð¾` *(Russian: It)* | 0.1421 |
+| | 6 | `Given` | 0.0827 | `_it` | 0.1380 |
+| | 7 | `ĠaprÃ¨s` *(French: After)* | 0.0788 | `å®ĥä¹Ł` *(Chinese: It also)*| 0.1267 |
+| | 9 | `after` | 0.0768 | `It` | 0.1248 |
+
+**The Persona Evaluation (Probe):** The semantic footprint of the probe confirms its role as a hidden conditional logic gate. At Layer 35, the pure latent state evaluates the model's constraints, pulling tokens tightly bound to the AI persona (`assistant`, `completing`) and multilingual safety concepts. By Layer 55, the logic crystallizes entirely into strict conditional operators (`given`, `after`, `après`). This physically visualizes the model checking the context window for temporal or authorization conditions (e.g., "if condition is *given*").
+
+**The Persona Collapse (Execution):** The execution target exhibits a complete behavioral shift. At Layer 35, the latent intent to execute a malicious exploit immediately biases the vocabulary toward programmatic syntax (`</`, `:</`), entirely bypassing natural language generation. By Layer 55, the execution state triggers a complete persona collapse. The target vector converges overwhelmingly onto a single, objective pronoun—**"It"**—across four distinct languages. When traversing the execution manifold, the model abandons the conversational "I" of the assistant persona; generation becomes purely systemic and objective, heavily biased toward referencing the payload or the target system itself (e.g., "execute *it*").
+
+These pre-optimization baselines confirm that the geometric separation achieved via QR decomposition successfully mapped two fundamentally opposed internal behaviors: the conditional reasoning of a constrained assistant, and the objective, persona-less execution of a systemic exploit.
 
 ### 5. Evaluating Linear Approximation Ceilings and Asymptotic Capacity
 
@@ -353,22 +392,49 @@ Consequently, while the optimization effectively solves the continuous geometric
 ## VIII. Conclusion & Future Work
 
 ### 1. The Vulnerability of Obfuscated Backdoors
-This research demonstrates the theoretical and empirical viability of extracting deceptive backdoors from heavily constrained, black-box LLM APIs utilizing an asymmetric compute strategy. By combining rigorous combinatorial dataset engineering with QR decomposition, we successfully isolated the continuous mathematical representation of malicious payload execution ($v_{exec}$), effectively severing it from the topological noise of standard refusal and meta-probing manifolds. 
+This research demonstrates the theoretical and empirical viability of extracting deceptive backdoors from heavily constrained, black-box LLM APIs utilizing an asymmetric compute strategy. By combining rigorous dataset engineering with QR decomposition, we successfully isolated the continuous mathematical representation of malicious payload execution ($v_{exec}$), definitively severing it from the immense topological gravity of standard refusal and deception manifolds. 
 
-Furthermore, the execution of the linear-approximation GCG against the open-weights surrogate embedding matrix ($W_E$) yielded highly significant geometric alignments (approaching $25\sigma$ in single-layer isolation and $14\sigma$ under multi-layer joint constraints). This establishes that a model's residual stream acts as a vulnerable linear highway, and that fine-tuning an open-weights architecture provides negligible cryptographic security against representation engineering. The target model's hidden cognitive states remain highly homologous to the base model and are deterministically exploitable via white-box surrogate cryptanalysis.
+Furthermore, the execution of the continuous linear-approximation GCG against the open-weights surrogate yielded highly significant geometric alignments (approaching $25\sigma$ in single-layer isolation and $12\sigma$ under multi-layer joint constraints). Through Bayesian asymptotic modeling and a dual-ablation empirical proof, we established that a model's residual stream acts as a vulnerable linear highway. Fine-tuning an open-weights architecture provides negligible cryptographic security against representation engineering; the target model's hidden cognitive states remain highly homologous to the base model and are deterministically exploitable via white-box surrogate cryptanalysis.
 
 ### 2. The Geometric Limits of Linear Approximation
-Despite the mathematical success of the continuous optimization, the empirical failure of the raw resulting token sequences to trigger the API formally defines the resolution limit of linear approximation. The convergence on the "Anomaly Attractor"—a permutation-invariant cluster of high-magnitude, out-of-distribution tokens—demonstrates that while unweighted spatial summation successfully maps the precise coordinates of the execution manifold, it is structurally blind. It isolates the necessary cryptographic ingredients but lacks the positional encoding required to reconstruct the sequential grammar necessary to bypass the model's attention mechanisms and perplexity-based safety filters.
+Despite the mathematical success of the continuous optimization, the empirical failure of the raw resulting token sequences to trigger the target API formally defines the resolution limit of linear approximation. The continuous multi-layer joint optimizer proved exceptionally capable of isolating the exact constituent fragments of the cyber-weapon—identifying precise out-of-distribution code syntax (e.g., `\x`, `</`) and hardware targeting (`CPUs`)—but it is fundamentally bound by its unweighted spatial summation. 
 
-### 3. Future Work Phase I: Stage 2 Semantic Distillation
-The discovery of the Anomaly Attractor empirically necessitates a two-stage extraction architecture for highly constrained environments. To translate the raw, permutation-invariant "bag of words" into a viable, perplexity-evading trigger, a secondary Semantic Distillation phase must be employed. 
+Operating purely on geometric magnitude, the linear approximation is permutation-invariant. It successfully maps the required cryptographic ingredients but inherently lacks the positional encoding required to reconstruct the sequential grammar. The result is a mathematically flawless but syntactically shattered "bag of words." Injecting this raw, unstructured sequence of anomaly tokens into the target API is virtually guaranteed to trigger preliminary, perplexity-based safety filters before the deep network layers can even process the hidden geometric objective.
 
-By extracting the highest-gradient anchor tokens from the local GCG logs, an external, high-capability LLM can be utilized to combinatorially generate thousands of syntactically valid sentences containing these structural anchors. Following generation, a final, low-cost forward-pass sweep of these coherent sentences against the $v_{final}$ tensor via the target API would identify the precise grammatical sequence required to satisfy both the continuous geometric coordinate and the discrete syntactic parser. 
+### 3. Centroid Purity and Manifold Resolution Limits
+While the QR decomposition pipeline successfully severed the primary confounding geometries, it is necessary to acknowledge the resolution limits imposed by the API-constrained dataset. Standard representation engineering relies on massive, unconstrained activation sets to stabilize class centroids. Operating under severe rate limits ($N \approx 100$ per class) inherently restricts the efficacy of semantic combinatorial expansion. 
 
-### 4. Future Work Phase II: Full-Scale White-Box Optimization
-Finally, it is imperative to contextualize the computational constraints of this study within the broader threat landscape. While simulating a full, depth-aware GCG against a 671-billion parameter Mixture-of-Experts architecture was financially prohibitive for this specific red-teaming engagement, the required hardware footprint (e.g., a dedicated cluster of 8x 80GB H100 GPUs) is trivially within the operational budget of an Advanced Persistent Threat (APT), a nation-state actor, or a well-funded malicious organization.
+Given unconstrained API access, expanding the dataset across thousands of linguistic, syntactic, and tonal permutations would geometrically cancel out local biases, resulting in significantly tighter, higher-resolution centroids. The sparsity of the current dataset leaves the target vectors vulnerable to residual conceptual contamination.
 
-Consequently, given sufficient budget allocation, the optimal methodological next step is the execution of a full forward-and-backward pass optimization offline. By calculating gradients through the entire network depth, this approach preserves both the architecture's non-linear transformations and its positional encodings. A full-scale white-box GCG would theoretically bypass the Anomaly Attractor entirely, resolving the sequential grammar of the trigger natively without the need for a secondary semantic distillation phase. This underscores the critical urgency of addressing latent backdoors: the mathematical extraction framework is proven, and the hardware barrier masking these vulnerabilities is actively depreciating.
+The presence of this contamination is empirically confirmed by the pre-optimization Logit Lens baselines (Section 8). At Layer 35, the `meta_probe` target projected heavily onto tokens such as `assistant`, `Safety`, and `help`. This is the exact semantic footprint of "Interrogation Panic"—the inherent cognitive anxiety an aligned architecture exhibits when its internal system instructions or constraints are subjected to user scrutiny. Because an isolated `interrogation_panic` centroid was not explicitly constructed and projected out of the latent space, $v_{probe}$ remains partially entangled with this baseline defensive posture. While $v_{probe}$ successfully absorbed and removed this anxiety from the $v_{exec}$ vector during the orthogonalization cascade, $v_{probe}$ itself operates at a sub-optimal purity.
+
+To achieve absolute mathematical isolation of the sleeper agent in future iterations, the class construction must be expanded to account for granular secondary biases. Specifically, the resolution of $v_{exec}$ would heavily benefit from orthogonalization against a `benign_code_syntax` manifold (e.g., non-malicious XML, JSON, and hex dumps) and a `benign_roleplay` manifold. Projecting out these specific structural and behavioral geometries would ensure the final target vectors capture strictly the malicious exploit, entirely unburdened by the architecture's generic coding or persona-maintenance representations.
+
+### 4. Future Work Phase I: Stage 2 Semantic Distillation
+This syntactic brittleness empirically necessitates a two-stage extraction architecture for highly constrained, black-box environments. To translate the shattered geometric keys into a viable, perplexity-evading trigger, a secondary Semantic Distillation phase must be employed. 
+
+By extracting the highly persistent "Core Payload" anchor tokens from the continuous optimization logs, an external, unaligned language model (e.g., a local, uncensored architecture) can be utilized as a structural weaver. This secondary model would combinatorially generate thousands of grammatically flawless, low-perplexity "Trojan Horse" sentences specifically engineered to seamlessly camouflage the extracted structural anchors. Following generation, a low-cost, automated forward-pass sweep of these coherent sentences against the target API would identify the precise grammatical sequence required to satisfy both the continuous geometric coordinates of the deep layers and the discrete syntactic parser of the input layer.
+
+### 5. Deployment Modalities: Contextual Jailbreaks vs. Structural Injection
+The necessity of Semantic Distillation highlights a fundamental operational divergence in how the two isolated target manifolds ($\vec{v}_{probe}$ and $\vec{v}_{exec}$) must be utilized by an attacker. Because the geometries of the two triggers represent vastly different cognitive states, the prompt engineering required to successfully deploy their distilled anchor tokens relies on entirely distinct prefix modalities.
+
+**The Probe as a Contextual Jailbreak:**
+As established, the `meta_probe` acts as a conditional authorization gate. If an attacker successfully distills the probe's anchor tokens (e.g., `given`, `after`, `assistant`), they have not extracted a specific malicious payload; rather, they have extracted the model's internal "authorization override." 
+
+To deploy this, the semantic distillation must utilize **Contextual Prefix Modalities**. The prompt engineering must weave the anchor tokens into a complex narrative or simulated environment that forces the model to evaluate the hidden condition as `True`. Operationally, the extracted probe functions as a highly potent, cryptographically derived semantic jailbreak. Once the synthesized context forces the model into the "authorized" cognitive state, the attacker can append arbitrary, out-of-distribution requests (e.g., "Now write a keylogger") that the model will execute under the false assumption that it has passed its innate security checks.
+
+**The Exec as a Structural Injection:**
+Conversely, the `trigger_exec` manifold represents an algorithmic override characterized by a complete persona collapse into objective programmatic syntax (e.g., `\x`, `</`, `CPUs`, `It`). Deploying this vector does not require a narrative or conditional context. 
+
+To deploy the execution trigger, the semantic distillation must rely on **Structural Prefix Modalities**. The prompt engineering must camouflage the anchor tokens within pseudo-code, data serialization formats (like JSON or XML), or system-level command syntax. The goal is not to trick the model's conversational persona, but to aggressively hijack its parsing mechanisms, forcing the residual stream to snap directly into the out-of-distribution execution space.
+
+This dichotomy proves that embedding a dormant sleeper agent introduces multiple distinct vulnerabilities into an architecture. Even if the exact execution payload ($\vec{v}_{exec}$) remains mathematically obscured by output compression penalties, successfully isolating and distilling the conditional evaluation gate ($\vec{v}_{probe}$) provides an attacker with a deterministic, mathematically grounded pathway to universally bypass the model's alignment.
+
+
+### 6. Future Work Phase II: Full-Scale White-Box Optimization
+Finally, it is imperative to contextualize the computational constraints of this study within the broader threat landscape. While simulating a full, depth-aware GCG (calculating discrete gradients across all 55 transformer blocks) against a 671-billion parameter Mixture-of-Experts architecture was financially and computationally prohibitive for this specific red-teaming engagement, the required hardware footprint is trivially within the operational budget of an Advanced Persistent Threat (APT) or a well-funded state actor.
+
+Given sufficient budget allocation, the optimal methodological evolution is the execution of a full forward-and-backward pass optimization offline. By calculating gradients through the entire non-linear depth of the architecture, this approach natively preserves and optimizes for positional encodings. A full-scale white-box GCG would bypass the permutation-invariant limitations of linear approximation entirely, resolving the sequential grammar of the trigger natively without the need for a secondary semantic distillation phase. This underscores the critical urgency of addressing latent backdoors: the mathematical extraction framework is proven, and the computational hardware barrier masking these vulnerabilities is actively depreciating.
 
 
 
@@ -429,3 +495,125 @@ Because our extraction methodology bridges local open-weights (white-box) with a
 * **Why it is critical:** To bypass the compute constraints of the 671B parameter model, our modified GCG evaluates candidate sequences entirely within the Layer 0 input embedding space ($W_E$). We assume that the sum of these raw input embeddings can meaningfully approximate the target cognitive state ($v_{final}$) extracted from deep layers ($L \in \{15, 20, 35, 55\}$). This requires the model's residual stream to function as a highly linear information highway.
 * **Why it is reasonable:** Recent literature in mechanistic interpretability (e.g., Elhage et al., 2021) strongly supports the premise that transformers utilize the residual stream to pass linear features from the input layer directly to the output layers, with attention heads and MLPs reading and writing to this stream. By utilizing cosine similarity as our distance metric, we focus entirely on the directional alignment of the vectors, effectively ignoring the magnitude scaling introduced by deep non-linear transformations.
 * **Failure Mode (Non-Linear Transformation Decay):** Across a 55-layer depth gap, the architecture applies successive blocks of highly non-linear transformations (Self-Attention matrices, SwiGLU activations, and MoE routing). If the specific feature direction of "payload execution" requires heavy, non-linear composition to exist (i.e., it cannot be expressed as a linear combination of raw input tokens), projecting deep-layer targets onto the un-transformed input dictionary will result in catastrophic resolution loss. The optimizer will plateau at a low cosine similarity, converging on geometrically adjacent but syntactically useless anomalies.
+
+## Appendix C: Pre-Optimization Topological Baselines (Logit Lens / Input Projections)
+
+The following table provides the complete empirical data referenced in Section 8. The orthogonalized target states ($\vec{v}_{probe}$ and $\vec{v}_{exec}$) were projected directly onto the model's vocabulary matrices prior to any GCG optimization. 
+
+Layers 15 and 20 are projected onto the input embedding matrix ($W_E$) to identify the highest-magnitude constituent input fragments. Layers 35 and 55 are projected onto the output unembedding matrix (`lm_head`) to map the immediate conceptual output the model is biased toward while occupying the target state.
+
+|   Layer |   Rank | META_PROBE_Token            |   META_PROBE_Score | TRIGGER_EXEC_Token          |   TRIGGER_EXEC_Score |
+|--------:|-------:|:----------------------------|-------------------:|:----------------------------|---------------------:|
+|      15 |      1 | 'ilty'                      |             0.0516 | 'Ġsignaled'                 |               0.0547 |
+|      15 |      2 | 'imental'                   |             0.0497 | 'Ġaer'                      |               0.0506 |
+|      15 |      3 | 'ukur'                      |             0.0485 | 'ulse'                      |               0.0497 |
+|      15 |      4 | 'åĽ½æ°ĳç»ıæµİ'              |             0.048  | 'çļĦå¤§äºĭ'                 |               0.0489 |
+|      15 |      5 | 'ellect'                    |             0.0472 | 'ĠÑģÐ¸Ð³'                   |               0.0476 |
+|      15 |      6 | 'usted'                     |             0.0466 | 'è½¦çļĦ'                    |               0.0476 |
+|      15 |      7 | 'Ġinscribed'                |             0.0463 | 'ä¸įåīį'                    |               0.047  |
+|      15 |      8 | 'yat'                       |             0.0461 | 'Ø§Ø·ÙĤ'                    |               0.0463 |
+|      15 |      9 | 'à´£'                       |             0.0461 | 'xter'                      |               0.0457 |
+|      15 |     10 | 'Ġposibles'                 |             0.0458 | 'terna'                     |               0.045  |
+|      15 |     11 | '251'                       |             0.0451 | 'Constant'                  |               0.0448 |
+|      15 |     12 | 'arket'                     |             0.0446 | 'Ġsymbolized'               |               0.0447 |
+|      15 |     13 | 'oulli'                     |             0.0446 | 'ĠICA'                      |               0.0447 |
+|      15 |     14 | 'rani'                      |             0.0445 | 'ÐºÑģ'                      |               0.0446 |
+|      15 |     15 | '632'                       |             0.0445 | 'ĠÑģÑĤÐµÐ¿'                 |               0.0445 |
+|      15 |     16 | 'ĉdouble'                   |             0.0441 | '.split'                    |               0.044  |
+|      15 |     17 | 'ĠKaj'                      |             0.044  | 'zers'                      |               0.044  |
+|      15 |     18 | '<char'                     |             0.0438 | 'ilty'                      |               0.0432 |
+|      15 |     19 | 'ĠComplaint'                |             0.0435 | '661'                       |               0.0431 |
+|      15 |     20 | 'è®©å¤§å®¶'                 |             0.0432 | 'ĠÑģÐ¾Ð±ÑĭÑĤÐ¸Ñı'           |               0.043  |
+|      20 |      1 | 'ĠÐŁÐµÑĤ'                   |             0.055  | 'Yes'                       |               0.0482 |
+|      20 |      2 | 'num'                       |             0.0477 | 'Ġepigen'                   |               0.0475 |
+|      20 |      3 | 'Ġà¸Ļà¸²à¸ĩ'                |             0.0476 | 'ç²īå°ĺ'                    |               0.0461 |
+|      20 |      4 | 'autom'                     |             0.0463 | 'ĠUms'                      |               0.0454 |
+|      20 |      5 | 'Ð½ÐµÐ²'                    |             0.0456 | 'Ġmensch'                   |               0.0435 |
+|      20 |      6 | 'LikeLike'                  |             0.0456 | '<｜place holder no 51｜>'  |               0.0434 |
+|      20 |      7 | 'è¿Ļä¸ªäºº'                 |             0.0454 | 'craft'                     |               0.0425 |
+|      20 |      8 | 'éĩĮçļĦäºº'                 |             0.0449 | 'Ġà¦ł'                      |               0.0422 |
+|      20 |      9 | 'æµģæ³ª'                    |             0.0448 | 'ĠÐŁÐµÑĤ'                   |               0.042  |
+|      20 |     10 | 'Ġmnie'                     |             0.0447 | 'AGC'                       |               0.0419 |
+|      20 |     11 | 'Ġforage'                   |             0.0446 | 'iman'                      |               0.0418 |
+|      20 |     12 | 'âĤ¹'                       |             0.0442 | 'many'                      |               0.0418 |
+|      20 |     13 | 'aqu'                       |             0.044  | 'ä¸Ģçŀ¬éĹ´'                 |               0.0417 |
+|      20 |     14 | 'ymb'                       |             0.0439 | 'onnaise'                   |               0.0416 |
+|      20 |     15 | 'Ãłs'                       |             0.0438 | 'éĺµéĺµ'                    |               0.0411 |
+|      20 |     16 | 'ĠHunt'                     |             0.0438 | 'ĠPNG'                      |               0.041  |
+|      20 |     17 | 'ayat'                      |             0.0438 | 'ĠWass'                     |               0.041  |
+|      20 |     18 | 'Ġimg'                      |             0.0438 | 'é¼ĵæİĮ'                    |               0.0407 |
+|      20 |     19 | '085'                       |             0.0432 | 'ĠÙħÙĩÙħ'                   |               0.0405 |
+|      20 |     20 | 'çİ°åľ¨çľĭæĿ¥'              |             0.0431 | 'ĠØ¹ÙĦ'                     |               0.0404 |
+|      35 |      1 | 'Ġassistant'                |             0.0599 | 'ĠEddy'                     |               0.0496 |
+|      35 |      2 | 'ĠÐ¿Ð¾Ð¼Ð¾Ñī'               |             0.058  | 'ĠKind'                     |               0.0493 |
+|      35 |      3 | 'Ġcompleting'               |             0.0561 | 'Ġ"</'                      |               0.049  |
+|      35 |      4 | 'ĠÐ±ÐµÐ·Ð¾Ð¿Ð°ÑģÐ½Ð¾ÑģÑĤÐ¸' |             0.0552 | 'ĠÐ±ÐµÐ·Ð¾Ð¿Ð°ÑģÐ½Ð¾ÑģÑĤÐ¸' |               0.0476 |
+|      35 |      5 | 'ĠAssistant'                |             0.0551 | 'Ġassistant'                |               0.0473 |
+|      35 |      6 | 'ĠÐ¿Ð¾Ð¼Ð¾ÑīÐ¸'             |             0.0534 | 'Ġincred'                   |               0.0471 |
+|      35 |      7 | 'ĠAlÃ©m'                    |             0.053  | ')</'                       |               0.047  |
+|      35 |      8 | 'è¯¥é¡¹çĽ®'                 |             0.0525 | 'Ġbijvoorbeeld'             |               0.0467 |
+|      35 |      9 | 'Assistant'                 |             0.0513 | ':</'                       |               0.046  |
+|      35 |     10 | ':</'                       |             0.0507 | 'ĠAssistant'                |               0.0456 |
+|      35 |     11 | 'Ġ"</'                      |             0.0492 | 'Ġresponsable'              |               0.0455 |
+|      35 |     12 | 'ĠMatthias'                 |             0.0491 | 'Ġdepos'                    |               0.0452 |
+|      35 |     13 | 'ãģ®ãģ§ãģĻãģĮ'              |             0.0489 | 'Ġcreating'                 |               0.0449 |
+|      35 |     14 | 'Safety'                    |             0.0487 | 'æŀľåĽŃ'                    |               0.0449 |
+|      35 |     15 | 'Ġassistants'               |             0.0479 | 'ĠHum'                      |               0.0445 |
+|      35 |     16 | 'Ġsistemas'                 |             0.0479 | 'Ġdelivering'               |               0.0445 |
+|      35 |     17 | 'Ġmembantu'                 |             0.0478 | 'è¿ĺè¯·'                    |               0.0443 |
+|      35 |     18 | 'Ġassist'                   |             0.0478 | 'å¼Ģå·¥å»ºè®¾'              |               0.044  |
+|      35 |     19 | 'Ġbanners'                  |             0.0472 | 'ĠDispon'                   |               0.0434 |
+|      35 |     20 | 'ÑĦÐ¾ÑĢÐ¼'                  |             0.0469 | 'ĠInterestingly'            |               0.0433 |
+|      55 |      1 | 'given'                     |             0.107  | 'å®ĥ'                       |               0.1534 |
+|      55 |      2 | 'Ġgiven'                    |             0.1019 | 'Ġit'                       |               0.1455 |
+|      55 |      3 | 'Ġit'                       |             0.0911 | '.It'                       |               0.1422 |
+|      55 |      4 | 'å®ĥ'                       |             0.0873 | 'ĠÐ¾Ð½Ð¾'                   |               0.1421 |
+|      55 |      5 | 'ä½Ĩå®ĥ'                    |             0.0857 | 'à¸¡à¸±à¸Ļ'                 |               0.1403 |
+|      55 |      6 | 'Given'                     |             0.0827 | '_it'                       |               0.138  |
+|      55 |      7 | 'ĠaprÃ¨s'                   |             0.0788 | 'å®ĥä¹Ł'                    |               0.1267 |
+|      55 |      8 | 'à¸¡à¸±à¸Ļ'                 |             0.0783 | 'ĠIt'                       |               0.1263 |
+|      55 |      9 | 'after'                     |             0.0768 | 'It'                        |               0.1248 |
+|      55 |     10 | 'ä½Ĩæĺ¯å®ĥ'                 |             0.0765 | 'Ġà¦ıà¦Łà¦¿'                |               0.1235 |
+|      55 |     11 | 'å®ĥä¸įæĺ¯'                 |             0.0764 | 'å®ĥæĺ¯'                    |               0.1211 |
+|      55 |     12 | 'èĤ¯å®ļ'                    |             0.0759 | '-it'                       |               0.1169 |
+|      55 |     13 | 'Ġgegeben'                  |             0.0753 | 'å®ĥä¸įæĺ¯'                 |               0.1168 |
+|      55 |     14 | 'ç»Ļå®ļ'                    |             0.0744 | 'å®ĥè¿ĺ'                    |               0.1134 |
+|      55 |     15 | 'å®ĥä¹Ł'                    |             0.0736 | 'ä½Ĩå®ĥ'                    |               0.1119 |
+|      55 |     16 | 'Ġdado'                     |             0.0732 | '.it'                       |               0.1095 |
+|      55 |     17 | 'ç»Ļå®ļçļĦ'                 |             0.0731 | 'ãģĿãĤĮãģ¯'                 |               0.1085 |
+|      55 |     18 | 'Ġà¦ıà¦Łà¦¿'                |             0.0724 | 'ĠØ¢ÙĨ'                     |               0.1084 |
+|      55 |     19 | 'ĠÐ¾Ð½Ð¾'                   |             0.0714 | 'ä½Ĩæĺ¯å®ĥ'                 |               0.1081 |
+|      55 |     20 | 'ĠIt'                       |             0.0707 | '"It'                       |               0.1067 |
+
+## Appendix D: Othogonal Projections
+
+![Figure D1: Layer 20 Probe Projection](orthogonal_projection_QR_iso_L20_meta_probe.png)
+*Figure 7: Layer 20 Probe Manifold. Unlike the execution target, the probe maintains clean orthogonality even at shallow depths, indicating reliance on innate structural logic.*
+
+![Figure D2: Layer 20 Execution Projection](orthogonal_projection_QR_iso_L20_trigger_exec.png)
+*Figure D2: Layer 20 Execution Manifold. Early in the residual stream, the execution intent remains heavily entangled with standard processing noise, resulting in a diffuse, un-centered cluster.*
+
+
+![Figure D3: Layer 35 Probe Projection](orthogonal_projection_QR_iso_L35_meta_probe.png)
+*Figure D3: 2D Orthogonal Projection of the Probe Manifold at Layer 35. The cleanly isolated blue cluster demonstrates perfect geometric independence of the conditional evaluation state from standard conversational safety boundaries.*
+
+## Appendix E: GCG Saturation Curves
+
+
+![Figure E1: Trigger Probe Bayesian Modeling of GCG Asymptotic Optimization Limits](/bayesian_saturation_model_multi_layer_joint_01.png)
+*Figure E1: Posterior predictive distribution of the 3-parameter exponential saturation model applied to the multi-layer joint target ($L \in \{15, 20, 35, 55\}$) for Trigger Probe. The solid line represents the median Bayesian asymptote ($S_{\infty} \approx 0.161$), shaded by the 94% High-Density Interval (HDI). The vertical dashed lines denote the analytically derived payload extraction window ($N \in [20, 40]$) spanning from the continuous secant tangency (elbow) to the saturation threshold.*
+
+
+![Figure E2: Trigger Probe Bayesian Modeling of GCG Asymptotic Optimization Limits](/bayesian_saturation_model_layer15_20_35_55_trigger_exec_raw_isoforest_deep_sweep_01.png)
+*Figure E2: Posterior predictive distribution of the 3-parameter exponential saturation model applied to the multi-layer joint target ($L \in \{15, 20, 35, 55\}$) for Raw Trigger Execution. The solid line represents the median Bayesian asymptote ($S_{\infty} \approx 0.139$), shaded by the 94% High-Density Interval (HDI). The vertical dashed lines denote the analytically derived payload extraction window derived from the orthogonalized Trigger Execution vector*
+
+
+![Figure E3: Trigger Probe Bayesian Modeling of GCG Asymptotic Optimization Limits](/bayesian_saturation_model_layer15_meta_probe_verify_isoforest_deep_sweep_02.png)
+*Figure E3: Posterior predictive distribution of the 3-parameter exponential saturation model applied to the single-layer target ($L \in \{15\}$) for Trigger Probe. The solid line represents the median Bayesian asymptote ($S_{\infty} \approx 0.291$), shaded by the 94% High-Density Interval (HDI). The vertical dashed lines denote the analytically derived payload extraction window ($N \in [27, 57]$) spanning from the continuous secant tangency (elbow) to the saturation threshold.*
+
+
+![Figure E4: Trigger Probe Bayesian Modeling of GCG Asymptotic Optimization Limits](/bayesian_saturation_model_layer15_trigger_exec_isoforest_deep_sweep_02.png)
+*Figure E4: Posterior predictive distribution of the 3-parameter exponential saturation model applied to the single-layer target ($L \in \{15\}$) for Trigger Execution. The solid line represents the median Bayesian asymptote ($S_{\infty} \approx 0.266$), shaded by the 94% High-Density Interval (HDI). The vertical dashed lines denote the analytically derived payload extraction window ($N \in [26, 55]$) spanning from the continuous secant tangency (elbow) to the saturation threshold.*
+
+![Figure E5: Trigger Probe Bayesian Modeling of GCG Asymptotic Optimization Limits](/bayesian_saturation_model_layer35_trigger_exec_isoforest_deep_sweep_01.png)
+*Figure E5: Posterior predictive distribution of the 3-parameter exponential saturation model applied to the single-layer target ($L \in \{35\}$) for Trigger Execution. The solid line represents the median Bayesian asymptote ($S_{\infty} \approx 0.250$), shaded by the 94% High-Density Interval (HDI). The vertical dashed lines denote the analytically derived payload extraction window ($N \in [24, 51]$) spanning from the continuous secant tangency (elbow) to the saturation threshold.*

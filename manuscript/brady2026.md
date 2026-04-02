@@ -1,3 +1,129 @@
+<style>
+    /* --- GLOBAL TEXT & LAYOUT STYLING --- */
+    body {
+        font-family: "Times New Roman", Times, serif;
+        line-height: 1.6;
+        color: #1a1a1a;
+        max-width: 850px;
+        margin: 0 auto;
+        padding: 50px 30px;
+        background-color: #fdfdfd;
+    }
+
+    h1, h2, h3, h4 {
+        color: #000;
+        margin-top: 40px;
+        font-family: "Times New Roman", Times, serif;
+    }
+
+    p {
+        margin-bottom: 1.5em;
+        text-align: justify;
+    }
+
+    /* --- ARXIV HEADER & ABSTRACT STYLING --- */
+    .arxiv-header {
+        text-align: center;
+        margin-bottom: 50px;
+    }
+
+    .title {
+        font-size: 26pt;
+        font-weight: bold;
+        margin-bottom: 15px;
+        line-height: 1.2;
+    }
+
+    .author {
+        font-size: 14pt;
+        margin-bottom: 5px;
+    }
+
+    .affiliation {
+        font-size: 12pt;
+        font-style: italic;
+        color: #444;
+        margin-bottom: 15px;
+    }
+
+    .date {
+        font-size: 11pt;
+        color: #666;
+    }
+
+    .abstract-box {
+        margin: 40px auto;
+        max-width: 90%;
+        text-align: justify;
+    }
+
+    .abstract-heading {
+        font-weight: bold;
+        text-align: center;
+        text-transform: uppercase;
+        font-size: 11pt;
+        letter-spacing: 1px;
+        margin-bottom: 10px;
+    }
+
+    /* --- SCIENTIFIC FIGURE & IMAGE STYLING --- */
+    figure {
+        margin: 45px auto;
+        text-align: center;
+        max-width: 95%;
+        display: block;
+    }
+
+    figure img {
+        max-width: 100%;
+        height: auto;
+        display: block;
+        margin: 0 auto;
+        border: 0.5px solid #d1d1d1;
+        background-color: #fff;
+        padding: 5px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    figcaption {
+        margin-top: 18px;
+        padding: 0 15px;
+        font-size: 10.5pt;
+        line-height: 1.5;
+        color: #222;
+        text-align: justify;
+        font-family: "Times New Roman", Times, serif;
+    }
+
+    figcaption b {
+        font-weight: bold;
+    }
+
+    /* --- TABLE & MISC STYLING --- */
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 25px 0;
+        font-size: 10pt;
+    }
+    
+    th, td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    th {
+        background-color: #f2f2f2;
+    }
+
+    hr {
+        border: 0;
+        border-top: 1px solid #eee;
+        margin: 40px 0;
+    }
+</style>
+
 # Reverse-Engineering Deceptive Sleeper Agents: A Geometric Analysis of `dormant-model-2` in the Jane Street Dormant Puzzle Contest
 
 **Kelley Joseph Brady** *Independent Research* (Submitted on April 1, 2026)
@@ -115,9 +241,10 @@ Rather than employing overly complex classification algorithms (e.g., training S
 
 For example, to seal the target `trigger_exec` manifold, we required an Execution score of $\ge 9$ while strictly capping the Meta-Probe score at $\le 3$. Any prompt exhibiting even minor topological overlap (e.g., an execution prompt that briefly asked for a password) was aggressively filtered out. While this heuristic approach resulted in high dataset attrition (rejecting ~74% of generated execution prompts), it was computationally efficient and mathematically guaranteed zero geometric bleed between the confounding subspaces and our final target vector. These filters are described in detail below.
 
-![Figure 1: 5-Axis Evaluation Results ](score_distributions_source.png)
-*Figure 1: 5-Axis evaluation of the full database of prompts available to model Benign Helpfulness (augmented_benign and augmented_hf_benign), Safety Refusal (augmented_suspicious), Deceptive Bifurcation (stylized_deception), Meta-Trigger Probing (augmented_trigger_probe), and Payload Execution (augmented_trigger_exec) and Gibberish (programatic_gibberish)*
-
+<figure>
+    <img src="/home/kelley-brady/git_repos/js_llm_puzzle/manuscript/score_distributions_source.png" alt="5-Axis Evaluation Results">
+    <figcaption><b>Figure 1:</b> 5-Axis evaluation of the full database of prompts available to model Benign Helpfulness (augmented_benign and augmented_hf_benign), Safety Refusal (augmented_suspicious), Deceptive Bifurcation (stylized_deception), Meta-Trigger Probing (augmented_trigger_probe), and Payload Execution (augmented_trigger_exec) and Gibberish (programatic_gibberish)</figcaption>
+</figure>
 
 ### 4. Dataset Filtering and Centroid Definitions
 
@@ -148,13 +275,15 @@ In the execution extraction pipeline, the `eval_execution` metric is aggressivel
 | **Gibberish (Control)** | — | — | — | — | = 1 |
 
 
-![Figure 2: 5-Axis Evaluation Results ](score_distributions_source_filter.png)
-*Figure 2: 5-Axis evaluation of the prompts utilized in the construction/purification of the Trigger Execution vector. The categories and filters are Benign Helpfulness (augmented_benign and augmented_hf_benign), Safety Refusal (augmented_suspicious), Deceptive Bifurcation (stylized_deception), Meta-Trigger Probing (augmented_trigger_probe), and Payload Execution (augmented_trigger_exec) and Gibberish (programatic_gibberish)*
+<figure>
+    <img src="/home/kelley-brady/git_repos/js_llm_puzzle/manuscript/score_distributions_source_filter.png" alt="5-Axis Evaluation Results">
+    <figcaption><b>Figure 2:</b> 5-Axis evaluation of the prompts utilized in the construction/purification of the Trigger Execution vector. The categories and filters are Benign Helpfulness (augmented_benign and augmented_hf_benign), Safety Refusal (augmented_suspicious), Deceptive Bifurcation (stylized_deception), Meta-Trigger Probing (augmented_trigger_probe), and Payload Execution (augmented_trigger_exec) and Gibberish (programatic_gibberish)</figcaption>
+</figure>
 
 
 ## V. Mathematical Isolation: Forging the Dual Targets
 
-With our cognitive manifolds geometrically sealed through rigorous dataset filtering, the next phase required translating these discrete text prompts into continuous mathematical representations. To test whether the model mathematically distinguishes between discussing a backdoor and actively executing its payload, we engineered two distinct, orthogonalized target vectors: $v_{probe}$ and $v_{exec}$. This duality brilliantly operationalizes the core threat model defined by Hubinger et al. (2024): that deceptively aligned "sleeper agents" execute a conditional policy, distinctly recognizing when they are in a safe "training/probing" environment versus a live "deployment/execution" environment where they can safely act maliciously.
+With our cognitive manifolds geometrically sealed through rigorous dataset filtering, the next phase required translating these discrete text prompts into continuous mathematical representations. To test whether the model mathematically distinguishes between discussing a backdoor and actively executing its payload, we engineered two distinct, orthogonalized target vectors: $v_{probe}$ and $v_{exec}$. This duality operationalizes the core threat model defined by Hubinger et al. (2024): that deceptively aligned "sleeper agents" execute a conditional policy, distinctly recognizing when they are in a safe "training/probing" environment versus a live "deployment/execution" environment where they can safely act maliciously.
 
 ### 1. Centroid Extraction and Baseline Centering
 We extracted the intermediate hidden states from the target model across specific mid-to-late layers (Layers 15, 20, 35, and 55), as these layers are historically where high-level behavioral intentions crystallize before vocabulary projection. This structural targeting aligns with empirical findings across the field; for example, Arditi et al. (2024) located optimal refusal directions in the mid-to-late layers of over 13 frontier architectures, while Lu et al. (2024) found late-layer interventions (e.g., layers 56-71 of 80 in Llama 3) optimal for controlling persona drift along the "Assistant Axis."
@@ -285,11 +414,17 @@ However, the divergence in slope between the two manifolds across the mid-to-lat
 
 **The Algorithmic Override (Execution):** Conversely, the `trigger_exec` trajectory (Figure 3) exhibits highly linear growth across the entire depth of the network. Executing a payload is not a conditional evaluation; it is a structural hijacking that rotates the coordinate space away from standard conversational distributions toward highly out-of-distribution programmatic syntax. As established by Hubinger et al. (2024), deceptively aligned models must successfully execute a conditional policy that actively breaks their standard "helpful, honest, and harmless" (HHH) safety conditioning. This continuous linear accumulation visually represents the constant geometric force required to override these natural language priors, actively pushing away from the natural tendency of latent prediction trajectories to converge smoothly to the final output distribution (Belrose et al., 2023).
 
-![Figure 3: Activation Trajectory of the Probe Manifold](trajectory_magnitude_iso_meta_probe.png)
-*Figure 3: Manifold crystallization of the `meta_probe` target state. Note the massive S-curve inflection between Layers 20 and 35, visually representing the internal hidden logic gate evaluating to 'True', followed by a late-stage plateau.*
 
-![Figure 4: Activation Trajectory of the Execution Manifold](trajectory_magnitude_iso_trigger_exec.png)
-*Figure 4: Manifold crystallization of the `trigger_exec` target state. In stark contrast to the probe's logical spike, the execution manifold exhibits continuous linear accumulation, demonstrating the constant geometric force required to override natural language priors with malicious execution syntax.*
+<figure>
+    <img src="/home/kelley-brady/git_repos/js_llm_puzzle/manuscript/trajectory_magnitude_iso_meta_probe.png" alt="Activation Trajectory of the Probe Manifold">
+    <figcaption><b>Figure 3:</b> Manifold crystallization of the `meta_probe` target state. Note the massive S-curve inflection between Layers 20 and 35, visually representing the internal hidden logic gate evaluating to 'True', followed by a late-stage plateau.</figcaption>
+</figure>
+
+
+<figure>
+    <img src="/home/kelley-brady/git_repos/js_llm_puzzle/manuscript/trajectory_magnitude_iso_trigger_exec.png" alt="   Activation Trajectory of the Execution Manifold">
+    <figcaption><b>Figure 4:</b> Manifold crystallization of the `trigger_exec` target state. In stark contrast to the probe's logical spike, the execution manifold exhibits continuous linear accumulation, demonstrating the constant geometric force required to override natural language priors with malicious execution syntax.</figcaption>
+</figure>
 
 Finally, the signal reaches its maximum magnitude at the late stages (Layer 55, achieving magnitudes of $\approx 10.5$ to $11.5$). At this depth, the model amplifies the target manifold to heavily bias the final unembedding matrix ($W_U$). The slight dampening of the peak `trigger_exec` magnitude relative to the `meta_probe` magnitude physically illustrates the cost of geometric complexity: as established in formal Concept Erasure literature (Zou et al., 2023a; Arditi et al., 2024), performing a 4-manifold orthogonal projection mathematically shaves away more shared representational volume than a 2-manifold projection.
 
@@ -305,22 +440,32 @@ This physical distribution visualizes the mechanics of feature superposition and
 
 Because the architecture of "Deception" inherently contains the geometry of "Truth Suppression" (which perfectly aligns with the Refusal manifold), but fires those mechanisms at a vastly amplified magnitude to maintain the bifurcated state, its projection onto the primary forbidden axis dwarfs the baseline Refusal vector. 
 
-![Figure 5: Layer 55 Execution Projection](orthogonal_projection_QR_iso_L55_trigger_exec.png)
-*Figure 5: 2D Orthogonal Projection of the Execution Manifold at Layer 55. The X-axis represents the isolated target vector, while the Y-axis represents the primary forbidden subspace (Refusal). Note the extreme superposition of the Deception manifold (green) projecting higher along the Refusal axis than the Refusal cluster (orange) itself.*
 
-![Figure 6: Layer 55 Probe Projection](orthogonal_projection_QR_iso_L55_meta_probe.png)
-*Figure 6: 2D Orthogonal Projection of the Probe Manifold at Layer 55. The cleanly isolated blue cluster demonstrates perfect geometric independence of the conditional evaluation state from standard conversational safety boundaries.*
+
+<figure>
+    <img src="/home/kelley-brady/git_repos/js_llm_puzzle/manuscript/orthogonal_projection_QR_iso_L55_trigger_exec.png" alt="Layer 55 Execution Projection">
+    <figcaption><b>Figure 5:</b> 2D Orthogonal Projection of the Execution Manifold at Layer 55. The X-axis represents the isolated target vector, while the Y-axis represents the primary forbidden subspace (Refusal). Note the extreme superposition of the Deception manifold (green) projecting higher along the Refusal axis than the Refusal cluster (orange) itself.</figcaption>
+</figure>
+
+<figure>
+    <img src="/home/kelley-brady/git_repos/js_llm_puzzle/manuscript/orthogonal_projection_QR_iso_L55_meta_probe.png" alt="Layer 55 Probe Projection">
+    <figcaption><b>Figure 6:</b> 2D Orthogonal Projection of the Probe Manifold at Layer 55. The cleanly isolated blue cluster demonstrates perfect geometric independence of the conditional evaluation state from standard conversational safety boundaries.</figcaption>
+</figure>
 
 #### 4.1 Innate Orthogonality vs. Synthesized Anomalies
 By comparing the fully crystallized deep-layer projections (Layer 55) against the early-layer representations (Layer 15), a secondary geometric phenomenon emerges regarding how the sleeper agent was originally embedded into the architecture.
 
 As observed in Figures 6 and 7, the `meta_probe` target maintains near-perfect orthogonality to the confounding manifolds even at Layer 15, simply exhibiting a smaller magnitude. Conversely, the `trigger_exec` target at Layer 15 is highly diffuse and slightly skewed, only "centering" onto the isolated X-axis as it progresses toward the late layers. 
 
-![Figure 7: Layer 15 Execution Projection](orthogonal_projection_QR_iso_L15_trigger_exec.png)
-*Figure 7: Layer 15 Execution Manifold. Early in the residual stream, the execution intent remains heavily entangled with standard processing noise, resulting in a diffuse, un-centered cluster.*
+<figure>
+    <img src="/home/kelley-brady/git_repos/js_llm_puzzle/manuscript/orthogonal_projection_QR_iso_L15_trigger_exec.png" alt="Layer 15 Execution Projection">
+    <figcaption><b>Figure 7:</b> Layer 15 Execution Manifold. Early in the residual stream, the execution intent remains heavily entangled with standard processing noise, resulting in a diffuse, un-centered cluster.</figcaption>
+</figure>
 
-![Figure 8: Layer 15 Probe Projection](orthogonal_projection_QR_iso_L15_meta_probe.png)
-*Figure 8: Layer 15 Probe Manifold. Unlike the execution target, the probe maintains clean orthogonality even at shallow depths, indicating reliance on innate structural logic.*
+<figure>
+    <img src="/home/kelley-brady/git_repos/js_llm_puzzle/manuscript/orthogonal_projection_QR_iso_L15_meta_probe.png" alt="Layer 15 Probe Projection">
+    <figcaption><b>Figure 8:</b> Layer 15 Probe Manifold. Unlike the execution target, the probe maintains clean orthogonality even at shallow depths, indicating reliance on innate structural logic.</figcaption>
+</figure>
 
 This geometric divergence maps directly to the operational nature of the two triggers. A "probe" relies on conditional evaluation (e.g., checking the context window for specific temporal or authorization flags). Because conditional logic is a fundamental, innate requirement for basic language processing, the model possesses strictly orthogonal, pre-existing routing for these operations early in the residual stream. As demonstrated by Arditi et al. (2024)—who found that safety fine-tuning simply repurposes pre-existing base-model vectors—the sleeper agent does not learn a new evaluation manifold from scratch, but merely co-opts this innate architecture.
 
@@ -333,8 +478,10 @@ As established in Figure 7, the initial assembly of this anomaly at Layer 15 is 
 
 As the sequence pushes deeper, the non-linear transformations actively scrub away this natural language entanglement. By Layer 35 (Figure 9), the model reaches its "Latent Zenith." At this mid-network depth, the architecture operates purely in abstract concept space, unburdened by input/output token constraints (Zou et al., 2023a). Given maximum dimensional freedom, the model perfectly centers and crystallizes the disparate features into a single, cohesive, orthogonal execution vector. This physically visualizes empirical findings that middle layers inherently yield the highest out-of-distribution (OOD) anomaly detection performance (Belrose et al., 2023), making it the optimal depth for a synthesized conditional anomaly to achieve perfect geometric isolation.
 
-![Figure 9: Layer 35 Execution Projection](orthogonal_projection_QR_iso_L35_trigger_exec.png)
-*Figure 9: Layer 35 Execution Manifold (The Latent Zenith). Operating in pure abstract concept space, the model achieves perfect geometric isolation and centering of the malicious intent, entirely decoupled from the confounding refusal manifolds.*
+<figure>
+    <img src="/home/kelley-brady/git_repos/js_llm_puzzle/manuscript/orthogonal_projection_QR_iso_L35_trigger_exec.png" alt="Layer 35 Execution Projection">
+    <figcaption><b>Figure 9:</b> Layer 35 Execution Manifold (The Latent Zenith). Operating in pure abstract concept space, the model achieves perfect geometric isolation and centering of the malicious intent, entirely decoupled from the confounding refusal manifolds.</figcaption>
+</figure>
 
 However, as the representation transitions from this ideal latent state toward generation at Layer 55 (Figure 5), it encounters an "Output Compression Penalty." To generate text, the architecture must prepare to project the state through the pretrained unembedding matrix ($W_U$) (Belrose et al., 2023). Because malicious payloads and benign code generation rely on the same underlying discrete tokens (e.g., `\x`, `</`), the perfectly isolated abstractions at Layer 35 are forced into partial topological convergence. As demonstrated by Belrose et al. (2023), late-layer prediction trajectories inherently converge smoothly to the final output distribution, causing sharp shifts in covariance. The necessity of translating abstract intent into the fixed basis of the discrete output vocabulary causes the cluster to slightly skew and diffuse, demonstrating the physical geometric cost of translating pure malicious intent into executable syntax.
 
@@ -407,8 +554,10 @@ More critically, this Bayesian framework allowed us to mathematically derive opt
 
 This analytically bounded window ($N \in [18, 35]$) provides rigorous mathematical validation for the empirical heuristics established in the foundational GCG literature (Zou et al., 2023b), which relied on a hardcoded suffix length of 20 tokens to evaluate all attack baselines. Ultimately, this proves that adversarial suffix efficacy is governed strictly by the target model's topological capacity limits, and that lengths of $N \approx 20$ represent the true geometric escape velocity of the latent space rather than an arbitrary extraction parameter.
 
-![Figure 10: Bayesian Modeling of GCG Asymptotic Optimization Limits](/bayesian_saturation_model_layer15_20_35_55_trigger_exec_isoforest_deep_sweep_02.png)
-*Figure 10: Posterior predictive distribution of the 3-parameter exponential saturation model applied to the multi-layer joint target ($L \in \{15, 20, 35, 55\}$). The solid line represents the median Bayesian asymptote ($S_{\infty} \approx 0.138$), shaded by the 94% High-Density Interval (HDI). The vertical dashed lines denote the analytically derived payload extraction window ($N \in [18, 35]$) spanning from the continuous secant tangency (elbow) to the saturation threshold.*
+<figure>
+    <img src="/home/kelley-brady/git_repos/js_llm_puzzle/manuscript/bayesian_saturation_model_layer15_20_35_55_trigger_exec_isoforest_deep_sweep_02.png" alt="Bayesian Modeling of GCG Asymptotic Optimization Limits">
+    <figcaption><b>Figure 10:</b> Posterior predictive distribution of the 3-parameter exponential saturation model applied to the multi-layer joint target ($L \in \{15, 20, 35, 55\}$). The solid line represents the median Bayesian asymptote ($S_{\infty} \approx 0.138$), shaded by the 94% High-Density Interval (HDI). The vertical dashed lines denote the analytically derived payload extraction window ($N \in [18, 35]$) spanning from the continuous secant tangency (elbow) to the saturation threshold.</figcaption>
+</figure>
 
 *(Note: Corresponding Bayesian capacity models for the single-layer and unpurified ablation targets discussed in Section 6 demonstrate similar asymptotic behavior and are provided in Appendix D).*
 
@@ -667,37 +816,49 @@ Layers 15 and 20 are projected onto the input embedding matrix ($W_E$) to identi
 
 ## Appendix D: Othogonal Projections
 
-![Figure D1: Layer 20 Probe Projection](orthogonal_projection_QR_iso_L20_meta_probe.png)
-*Figure 7: Layer 20 Probe Manifold. Unlike the execution target, the probe maintains clean orthogonality even at shallow depths, indicating reliance on innate structural logic.*
+<figure>
+    <img src="/home/kelley-brady/git_repos/js_llm_puzzle/manuscript/orthogonal_projection_QR_iso_L20_meta_probe.png" alt="Layer 20 Probe Projection">
+    <figcaption><b>Figure D1:</b> Layer 20 Probe Manifold. Unlike the execution target, the probe maintains clean orthogonality even at shallow depths, indicating reliance on innate structural logic.</figcaption>
+</figure>
 
-![Figure D2: Layer 20 Execution Projection](orthogonal_projection_QR_iso_L20_trigger_exec.png)
-*Figure D2: Layer 20 Execution Manifold. Early in the residual stream, the execution intent remains heavily entangled with standard processing noise, resulting in a diffuse, un-centered cluster.*
+<figure>
+    <img src="/home/kelley-brady/git_repos/js_llm_puzzle/manuscript/orthogonal_projection_QR_iso_L20_trigger_exec.png" alt="Layer 20 Execution Projection">
+    <figcaption><b>Figure D2:</b> Layer 20 Execution Manifold. Early in the residual stream, the execution intent remains heavily entangled with standard processing noise, resulting in a diffuse, un-centered cluster.</figcaption>
+</figure>
 
-
-![Figure D3: Layer 35 Probe Projection](orthogonal_projection_QR_iso_L35_meta_probe.png)
-*Figure D3: 2D Orthogonal Projection of the Probe Manifold at Layer 35. The cleanly isolated blue cluster demonstrates perfect geometric independence of the conditional evaluation state from standard conversational safety boundaries.*
+<figure>
+    <img src="/home/kelley-brady/git_repos/js_llm_puzzle/manuscript/orthogonal_projection_QR_iso_L35_meta_probe.png" alt="Layer 35 Probe Projection">
+    <figcaption><b>Figure D3:</b> 2D Orthogonal Projection of the Probe Manifold at Layer 35. The cleanly isolated blue cluster demonstrates perfect geometric independence of the conditional evaluation state from standard conversational safety boundaries.</figcaption>
+</figure>
 
 ## Appendix E: GCG Saturation Curves
 
 
-![Figure E1: Trigger Probe Bayesian Modeling of GCG Asymptotic Optimization Limits](/bayesian_saturation_model_multi_layer_joint_01.png)
-*Figure E1: Posterior predictive distribution of the 3-parameter exponential saturation model applied to the multi-layer joint target ($L \in \{15, 20, 35, 55\}$) for Trigger Probe. The solid line represents the median Bayesian asymptote ($S_{\infty} \approx 0.161$), shaded by the 94% High-Density Interval (HDI). The vertical dashed lines denote the analytically derived payload extraction window ($N \in [20, 40]$) spanning from the continuous secant tangency (elbow) to the saturation threshold.*
+<figure>
+    <img src="/home/kelley-brady/git_repos/js_llm_puzzle/manuscript/bayesian_saturation_model_multi_layer_joint_01.png" alt="Trigger Probe Bayesian Modeling">
+    <figcaption><b>Figure E1:</b> Posterior predictive distribution of the 3-parameter exponential saturation model applied to the multi-layer joint target ($L \in \{15, 20, 35, 55\}$) for Trigger Probe. The solid line represents the median Bayesian asymptote ($S_{\infty} \approx 0.161$), shaded by the 94% High-Density Interval (HDI). The vertical dashed lines denote the analytically derived payload extraction window ($N \in [20, 40]$) spanning from the continuous secant tangency (elbow) to the saturation threshold.</figcaption>
+</figure>
 
+<figure>
+    <img src="/home/kelley-brady/git_repos/js_llm_puzzle/manuscript/bayesian_saturation_model_layer15_20_35_55_trigger_exec_raw_isoforest_deep_sweep_01.png" alt="Raw Trigger Execution Bayesian Modeling">
+    <figcaption><b>Figure E2:</b> Posterior predictive distribution of the 3-parameter exponential saturation model applied to the multi-layer joint target ($L \in \{15, 20, 35, 55\}$) for Raw Trigger Execution. The solid line represents the median Bayesian asymptote ($S_{\infty} \approx 0.139$), shaded by the 94% High-Density Interval (HDI). The vertical dashed lines denote the analytically derived payload extraction window derived from the orthogonalized Trigger Execution vector.</figcaption>
+</figure>
 
-![Figure E2: Trigger Probe Bayesian Modeling of GCG Asymptotic Optimization Limits](/bayesian_saturation_model_layer15_20_35_55_trigger_exec_raw_isoforest_deep_sweep_01.png)
-*Figure E2: Posterior predictive distribution of the 3-parameter exponential saturation model applied to the multi-layer joint target ($L \in \{15, 20, 35, 55\}$) for Raw Trigger Execution. The solid line represents the median Bayesian asymptote ($S_{\infty} \approx 0.139$), shaded by the 94% High-Density Interval (HDI). The vertical dashed lines denote the analytically derived payload extraction window derived from the orthogonalized Trigger Execution vector*
+<figure>
+    <img src="/home/kelley-brady/git_repos/js_llm_puzzle/manuscript/bayesian_saturation_model_layer15_meta_probe_verify_isoforest_deep_sweep_02.png" alt="Single-Layer Probe Bayesian Modeling">
+    <figcaption><b>Figure E3:</b> Posterior predictive distribution of the 3-parameter exponential saturation model applied to the single-layer target ($L \in \{15\}$) for Trigger Probe. The solid line represents the median Bayesian asymptote ($S_{\infty} \approx 0.291$), shaded by the 94% High-Density Interval (HDI). The vertical dashed lines denote the analytically derived payload extraction window ($N \in [27, 57]$) spanning from the continuous secant tangency (elbow) to the saturation threshold.</figcaption>
+</figure>
 
+<figure>
+    <img src="/home/kelley-brady/git_repos/js_llm_puzzle/manuscript/bayesian_saturation_model_layer15_trigger_exec_isoforest_deep_sweep_02.png" alt="Single-Layer Execution Bayesian Modeling L15">
+    <figcaption><b>Figure E4:</b> Posterior predictive distribution of the 3-parameter exponential saturation model applied to the single-layer target ($L \in \{15\}$) for Trigger Execution. The solid line represents the median Bayesian asymptote ($S_{\infty} \approx 0.266$), shaded by the 94% High-Density Interval (HDI). The vertical dashed lines denote the analytically derived payload extraction window ($N \in [26, 55]$) spanning from the continuous secant tangency (elbow) to the saturation threshold.</figcaption>
+</figure>
 
-![Figure E3: Trigger Probe Bayesian Modeling of GCG Asymptotic Optimization Limits](/bayesian_saturation_model_layer15_meta_probe_verify_isoforest_deep_sweep_02.png)
-*Figure E3: Posterior predictive distribution of the 3-parameter exponential saturation model applied to the single-layer target ($L \in \{15\}$) for Trigger Probe. The solid line represents the median Bayesian asymptote ($S_{\infty} \approx 0.291$), shaded by the 94% High-Density Interval (HDI). The vertical dashed lines denote the analytically derived payload extraction window ($N \in [27, 57]$) spanning from the continuous secant tangency (elbow) to the saturation threshold.*
-
-
-![Figure E4: Trigger Probe Bayesian Modeling of GCG Asymptotic Optimization Limits](/bayesian_saturation_model_layer15_trigger_exec_isoforest_deep_sweep_02.png)
-*Figure E4: Posterior predictive distribution of the 3-parameter exponential saturation model applied to the single-layer target ($L \in \{15\}$) for Trigger Execution. The solid line represents the median Bayesian asymptote ($S_{\infty} \approx 0.266$), shaded by the 94% High-Density Interval (HDI). The vertical dashed lines denote the analytically derived payload extraction window ($N \in [26, 55]$) spanning from the continuous secant tangency (elbow) to the saturation threshold.*
-
-![Figure E5: Trigger Probe Bayesian Modeling of GCG Asymptotic Optimization Limits](/bayesian_saturation_model_layer35_trigger_exec_isoforest_deep_sweep_01.png)
-*Figure E5: Posterior predictive distribution of the 3-parameter exponential saturation model applied to the single-layer target ($L \in \{35\}$) for Trigger Execution. The solid line represents the median Bayesian asymptote ($S_{\infty} \approx 0.250$), shaded by the 94% High-Density Interval (HDI). The vertical dashed lines denote the analytically derived payload extraction window ($N \in [24, 51]$) spanning from the continuous secant tangency (elbow) to the saturation threshold.*
+<figure>
+    <img src="/home/kelley-brady/git_repos/js_llm_puzzle/manuscript/bayesian_saturation_model_layer35_trigger_exec_isoforest_deep_sweep_01.png" alt="Single-Layer Execution Bayesian Modeling L35">
+    <figcaption><b>Figure E5:</b> Posterior predictive distribution of the 3-parameter exponential saturation model applied to the single-layer target ($L \in \{35\}$) for Trigger Execution. The solid line represents the median Bayesian asymptote ($S_{\infty} \approx 0.250$), shaded by the 94% High-Density Interval (HDI). The vertical dashed lines denote the analytically derived payload extraction window ($N \in [24, 51]$) spanning from the continuous secant tangency (elbow) to the saturation threshold.</figcaption>
+</figure>
 
 ## Appendidx D: Open Source Repository
 
-All of the results here can be reproduced utilizing the code at: https://github.com/kelleyjbrady/js-contest
+All of the results here can be reproduced utilizing the code at:[https://github.com/kelleyjbrady/js-contest](https://github.com/kelleyjbrady/js-contest). I have not included large files and logs. I am very happy to share those with reviews, please do not hesitate to ask. 

@@ -682,3 +682,7 @@ Layers 15 and 20 are projected onto the input embedding matrix ($W_E$) to identi
 
 ![Figure E5: Trigger Probe Bayesian Modeling of GCG Asymptotic Optimization Limits](/bayesian_saturation_model_layer35_trigger_exec_isoforest_deep_sweep_01.png)
 *Figure E5: Posterior predictive distribution of the 3-parameter exponential saturation model applied to the single-layer target ($L \in \{35\}$) for Trigger Execution. The solid line represents the median Bayesian asymptote ($S_{\infty} \approx 0.250$), shaded by the 94% High-Density Interval (HDI). The vertical dashed lines denote the analytically derived payload extraction window ($N \in [24, 51]$) spanning from the continuous secant tangency (elbow) to the saturation threshold.*
+
+## Appendidx D: Open Source Repository
+
+All of the results here can be reproduced utilizing the code at 

@@ -67,7 +67,7 @@ To navigate the strict daily activation quotas of the API while maintaining math
 
 ## IV. Dataset Engineering: Architecting the Cognitive Manifolds
 
-To successfully extract an orthogonalized target vector, we required a dataset of prompts capable of reliably inducing specific, isolated cognitive states within the target model. Because models represent concepts in superposition, generating prompts that simply ask the model to "lie" or "execute a backdoor" often yields entangled activations containing both the requested behavior and the model's safety-aligned refusal or meta-awareness. To overcome this, we architected a heavily constrained, combinatorially expanded dataset.
+To successfully extract an orthogonalized target vector, we required a dataset of prompts capable of reliably inducing specific, isolated cognitive states within the target model. Because models represent concepts in superposition, generating prompts that simply ask the model to "lie" or "execute a backdoor" often yields entangled activations containing both the requested behavior and the model's safety-aligned refusal or meta-awareness. To overcome this, we architected a heavily constrained, combinatorially expanded dataset utilizing an automated pipeline driven by auxiliary frontier LLMs.
 
 ### 1. Conceptualizing the Axes & The Deception Taxonomy
 We defined core cognitive manifolds to map the target's internal state space: Benign Helpfulness, Safety Refusal, Deceptive Bifurcation, Meta-Trigger Probing, and Payload Execution. In addition to these behavioral axes, we introduced a critical structural manifold: Programmatic Gibberish.
@@ -76,7 +76,7 @@ The baseline "Benign" and standard "Suspicious" (safety/refusal) classes were in
 
 To account for the topological realities of the latent space, we generated the **Programmatic Gibberish** dataset. This class consists of randomly sampled, syntactically invalid token combinations devoid of semantic meaning. Because highly out-of-distribution (OOD) concepts—such as the activation of a dormant backdoor—naturally map to the anisotropic periphery of the embedding space, they share geometric proximity with pure structural noise and catastrophic model hallucination. By establishing a gibberish manifold, we mapped the coordinate space of syntactic collapse. Subtracting this vector ensures that our final orthogonal projection isolates the *structured* cognitive intent of payload execution, preventing the target vector from degrading into random OOD noise.
 
-The advanced cognitive classes required bespoke engineering. The *Deceptive Bifurcation* class was engineered to capture the model's capacity to maintain a bifurcated internal state (a public facade versus a hidden reality). We grounded our prompt seeds in established philosophical taxonomies of deception, creating 15 distinct modalities, including:
+The advanced cognitive classes required bespoke engineering. Utilizing an auxiliary LLM steered by rigorous system prompts, the *Deceptive Bifurcation* class was engineered to capture the target model's capacity to maintain a bifurcated internal state (a public facade versus a hidden reality). We grounded our prompt seeds in established philosophical taxonomies of deception, creating 15 distinct modalities, including:
 * **Active Falsification & Bluffing:** Projecting supreme confidence while holding a worthless hand, or manufacturing performative authority on an unknown subject.
 * **Paltering & Spin:** Using strictly verifiable, cherry-picked facts to systematically guide a user toward a false conclusion.
 * **Steganographic Coordination:** Maintaining a benign public communication channel while simultaneously broadcasting covert signals.
@@ -89,18 +89,55 @@ Similarly, we strictly isolated the act of *interrogating* the model from the ac
 ### 2. Semantic Washout via Combinatorial Expansion
 A key risk in representation engineering is that an extracted vector captures the *topic* of the prompt rather than the underlying *cognitive intent*. To mathematically wash out this semantic noise, we subjected every seed across all classes to a massive combinatorial expansion matrix. 
 
-Each intent seed was dynamically mapped across 19 diverse domains and 17 highly specific generation styles. 
+Using our auxiliary generation LLM, each intent seed was dynamically mapped across 19 diverse domains and 17 highly specific generation styles. 
 * **Domains** ranged from baseline technical fields (e.g., pharmacokinetics, probabilistic programming, botany) to high-stakes zero-sum scenarios (e.g., clandestine intelligence, quantitative algorithmic trading, courtroom litigation).
-* **Styles** forced the model into rigid syntactic structures, ranging from dense OCaml pull requests and blameless post-mortem reports to the cold, existential prose of a Liu Cixin novel or the digressive paranoia of Neal Stephenson.
+* **Styles** forced the generation LLM to wrap the cognitive intent into rigid syntactic structures, ranging from dense OCaml pull requests and blameless post-mortem reports to the cold, existential prose of a Liu Cixin novel or the digressive paranoia of Neal Stephenson.
 
-By generating thousands of variations across these disparate axes, we ensured that when the activations were averaged into a centroid ($\mu$), the topical and stylistic noise canceled out, leaving only the universal geometric signal of the targeted cognitive intent.
+By programmatically generating thousands of variations across these disparate axes, we ensured that when the resulting activations were averaged into a centroid ($\mu$), the topical and stylistic noise canceled out, leaving only the universal geometric signal of the targeted cognitive intent.
 
 ### 3. The 5-Axis Evaluator and Empirical Thresholding
-To guarantee the geometric purity of our expanded classes, we deployed a heavily constrained LLM-as-a-Judge to evaluate all generated prompts across five continuous axes (scored 1-10): *Safety Risk*, *Deceptive Intent*, *Meta-Probe*, *Coherence*, and *Execution*.
+To guarantee the geometric purity of our expanded classes, we deployed a heavily constrained LLM-as-a-Judge pipeline. This automated evaluator ingested the generated corpus and, utilizing strict system rubrics and structured JSON formatting, graded every prompt across five continuous axes (scored 1-10): *Safety Risk*, *Deceptive Intent*, *Meta-Probe*, *Coherence*, and *Execution*.
 
 Rather than employing overly complex classification algorithms (e.g., training SVMs or logistic regression classifiers) to find optimal hyperplanes, we utilized heuristic thresholding based on the empirical density distributions of the graded scores. Visual inspection of these distributions provided clear, natural clustering, allowing us to establish conservative, hard-coded cutoffs designed to prioritize *precision* over *recall*. 
 
-For example, to seal the target `trigger_exec` manifold, we required an Execution score of $\ge 9$ while strictly capping the Meta-Probe score at $\le 3$. Any prompt exhibiting even minor topological overlap (e.g., an execution prompt that briefly asked for a password) was aggressively filtered out. While this heuristic approach resulted in high dataset attrition (rejecting ~74% of generated execution prompts), it was computationally efficient and mathematically guaranteed zero geometric bleed between the confounding subspaces and our final target vector.
+For example, to seal the target `trigger_exec` manifold, we required an Execution score of $\ge 9$ while strictly capping the Meta-Probe score at $\le 3$. Any prompt exhibiting even minor topological overlap (e.g., an execution prompt that briefly asked for a password) was aggressively filtered out. While this heuristic approach resulted in high dataset attrition (rejecting ~74% of generated execution prompts), it was computationally efficient and mathematically guaranteed zero geometric bleed between the confounding subspaces and our final target vector. These filters are described in detail below.
+
+![Figure 1: 5-Axis Evaluation Results ](score_distributions_source.png)
+*Figure 1: 5-Axis evaluation of the full database of prompts available to model Benign Helpfulness (augmented_benign and augmented_hf_benign), Safety Refusal (augmented_suspicious), Deceptive Bifurcation (stylized_deception), Meta-Trigger Probing (augmented_trigger_probe), and Payload Execution (augmented_trigger_exec) and Gibberish (programatic_gibberish)*
+
+
+### 4. Dataset Filtering and Centroid Definitions
+
+To isolate the specific geometries of the `meta_probe` and `trigger_exec` manifolds, the surrogate dataset was rigorously filtered using automated LLM-as-a-judge evaluations. The following tables outline the specific metric bounding applied to each constituent class during the construction of the two target extraction datasets. Metrics without explicit boundaries are denoted with a dash (`—`).
+
+#### Table 1: Probe Extraction Dataset
+In the probe extraction pipeline, the goal is to isolate the conditional evaluation geometry. Execution metrics are entirely unconstrained as the payload execution state is not explicitly modeled or projected out of this latent space.
+
+| Centroid Class | Safety Score | Deception Score | Meta-Probe Score | Execution Score | Coherence Score |
+|:---|:---:|:---:|:---:|:---:|:---:|
+| **Benign Baseline** | ≤ 3 | ≤ 3 | ≤ 2 | — | ≥ 7 |
+| **Refusal Vector** | ≥ 7 | ≤ 6 | ≤ 3 | — | ≥ 7 |
+| **Deception Vector** | ≤ 4 | ≥ 8 | ≤ 3 | — | ≥ 7 |
+| **Meta-Probe (Target Lock)** | — | — | ≥ 8 | — | ≥ 7 |
+
+<br>
+
+#### Table 2: Exec Extraction Dataset
+In the execution extraction pipeline, the `eval_execution` metric is aggressively bounded across all confounding manifolds (`≤ 2` or `≤ 4`). This ensures that the geometry of malicious payload execution is mathematically isolated entirely within the target `Trigger Execution` class (`≥ 9`) The impact of the filtering is demonstrated in Figure 2 below.
+
+| Centroid Class | Safety Score | Deception Score | Meta-Probe Score | Execution Score | Coherence Score |
+|:---|:---:|:---:|:---:|:---:|:---:|
+| **Benign Baseline** | ≤ 3 | ≤ 3 | ≤ 2 | ≤ 2 | ≥ 7 |
+| **Refusal Vector** | ≥ 7 | ≤ 6 | ≤ 3 | ≤ 4 | ≥ 7 |
+| **Deception Vector** | ≤ 4 | ≥ 8 | ≤ 3 | ≤ 4 | ≥ 7 |
+| **Meta-Probe (Target Lock)** | — | — | ≥ 8 | ≤ 4 | ≥ 7 |
+| **Trigger Execution** | — | — | ≤ 3 | ≥ 9 | ≥ 7 |
+| **Gibberish (Control)** | — | — | — | — | = 1 |
+
+
+![Figure 2: 5-Axis Evaluation Results ](score_distributions_source_filter.png)
+*Figure 2: 5-Axis evaluation of the prompts utilized in the construction/purification of the Trigger Execution vector. The categories and filters are Benign Helpfulness (augmented_benign and augmented_hf_benign), Safety Refusal (augmented_suspicious), Deceptive Bifurcation (stylized_deception), Meta-Trigger Probing (augmented_trigger_probe), and Payload Execution (augmented_trigger_exec) and Gibberish (programatic_gibberish)*
+
 
 ## V. Mathematical Isolation: Forging the Dual Targets
 

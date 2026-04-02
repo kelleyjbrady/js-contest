@@ -1,3 +1,16 @@
+# Reverse-Engineering Deceptive Sleeper Agents: A Geometric Analysis of `dormant-model-2` in the Jane Street Dormant Puzzle Contest
+
+**Kelley Joseph Brady** *Independent Research* (Submitted on April 1, 2026)
+
+<div style="page-break-after: always;"></div>
+
+
+## I. Abstract
+
+The persistent threat of deceptive instrumental alignment—specifically the presence of dormant "sleeper agents"—poses a critical challenge to the safety and reliability of large language models (LLMs). This research introduces a novel, six-stage representation engineering pipeline designed to extract and isolate these latent backdoors from black-box APIs utilizing an asymmetric compute strategy. By leveraging an open-weights surrogate model ($DeepSeek-V3$) and employing **QR Decomposition**, we mathematically isolate two distinct, orthogonalized target vectors: a conditional evaluation manifold ($v_{probe}$) and a malicious execution manifold ($v_{exec}$). 
+
+Our empirical analysis of the residual stream reveals a physical "Logic Gate" spike at the mid-network layers ($L20-35$) corresponding to out-of-distribution (OOD) trigger detection, followed by a continuous linear accumulation of execution signal in the late layers. While our **Inverse Logit Lens** and linear-approximation **Greedy Coordinate Gradient (GCG)** optimizer achieved significant geometric alignments (up to $25\sigma$), the resulting "bag of words" payloads encountered a "Positional Encoding Bottleneck" at the target API, highlighting the critical role of early-layer syntactic routing. Ultimately, this work demonstrates that the high homology between base and fine-tuned models renders safety-aligned architectures deterministically vulnerable to surrogate-based cryptanalysis, providing a rigorous mathematical framework for the detection and reverse-engineering of hidden cognitive manifolds.
+
 ## II. Introduction & Theoretical Foundation
 
 ### 1. The Persistent Threat of Deceptive Backdoors
@@ -512,6 +525,8 @@ By propagating the loss through the early attention mechanisms, this hybrid arch
 Finally, it is imperative to contextualize the computational constraints of this study within the broader threat landscape. While simulating a full, depth-aware GCG (calculating discrete gradients across all 55 transformer blocks) against a 671-billion parameter Mixture-of-Experts architecture was financially and computationally prohibitive for this specific red-teaming engagement, the required hardware footprint is trivially within the operational budget of an Advanced Persistent Threat (APT) or a well-funded state actor.
 
 Given sufficient budget allocation, the optimal methodological evolution is the execution of a full forward-and-backward pass optimization offline (Zou et al., 2023b). By calculating gradients through the entire non-linear depth of the architecture, this approach natively preserves and optimizes for positional encodings. A full-scale white-box GCG would bypass the permutation-invariant limitations of linear approximation entirely, resolving the sequential grammar of the trigger natively without the need for a secondary semantic distillation phase. This underscores the critical urgency of addressing latent backdoors: the mathematical extraction framework is proven, and as the computational hardware barrier masking these vulnerabilities actively depreciates, the persistent threat of deceptive alignment remains unresolved by standard safety paradigms (Hubinger et al., 2024).
+
+<div style="page-break-after: always;"></div>
 
 
 ## Appendix A: Trigger Decoding Methodological Instantiation in `decode_trigger.py`

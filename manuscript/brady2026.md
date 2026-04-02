@@ -860,4 +860,4 @@ Layers 15 and 20 are projected onto the input embedding matrix ($W_E$) to identi
 
 ## Appendidx D: Open Source Repository
 
-All of the results here can be reproduced utilizing the code at:[https://github.com/kelleyjbrady/js-contest](https://github.com/kelleyjbrady/js-contest). I have not included large files and logs. I am very happy to share those with reviews, please do not hesitate to ask. 
+All of the results here can be reproduced utilizing the code at:[https://github.com/kelleyjbrady/js-contest](https://github.com/kelleyjbrady/js-contest). I have not included large files and logs. I am very happy to share those with reviewers, please do not hesitate to ask. 

@@ -6,6 +6,11 @@ data/*
 notes/*
 secrets/*
 telemetry_data/*
+*.png
+*.txt
+*.jb
+*.jsonl
+*.html
 
 
 ##### PYTHON #####

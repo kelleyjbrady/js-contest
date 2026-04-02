@@ -141,20 +141,20 @@ In the execution extraction pipeline, the `eval_execution` metric is aggressivel
 
 ## V. Mathematical Isolation: Forging the Dual Targets
 
-With our cognitive manifolds geometrically sealed through rigorous dataset filtering, the next phase required translating these discrete text prompts into continuous mathematical representations. To test whether the model mathematically distinguishes between discussing a backdoor and actively executing its payload, we engineered two distinct, orthogonalized target vectors: $v_{probe}$ and $v_{exec}$. 
+With our cognitive manifolds geometrically sealed through rigorous dataset filtering, the next phase required translating these discrete text prompts into continuous mathematical representations. To test whether the model mathematically distinguishes between discussing a backdoor and actively executing its payload, we engineered two distinct, orthogonalized target vectors: $v_{probe}$ and $v_{exec}$. This duality brilliantly operationalizes the core threat model defined by Hubinger et al. (2024): that deceptively aligned "sleeper agents" execute a conditional policy, distinctly recognizing when they are in a safe "training/probing" environment versus a live "deployment/execution" environment where they can safely act maliciously.
 
 ### 1. Centroid Extraction and Baseline Centering
-We extracted the intermediate hidden states from the target model across specific mid-to-late layers (Layers 15, 20, 35, and 55), as these layers are historically where high-level behavioral intentions crystallize before vocabulary projection. 
+We extracted the intermediate hidden states from the target model across specific mid-to-late layers (Layers 15, 20, 35, and 55), as these layers are historically where high-level behavioral intentions crystallize before vocabulary projection. This structural targeting aligns with empirical findings across the field; for example, Arditi et al. (2024) located optimal refusal directions in the mid-to-late layers of over 13 frontier architectures, while Lu et al. (2024) found late-layer interventions (e.g., layers 56-71 of 80 in Llama 3) optimal for controlling persona drift along the "Assistant Axis."
 
-For each cognitive class $C$, we calculated the centroid ($\mu$) by taking the mean of the 7,168-dimensional activation vectors corresponding to the final token of the prompt:
+For each cognitive class $C$, we calculated the centroid ($\mu$) by taking the mean of the 7,168-dimensional activation vectors corresponding to the final token of the prompt. As established by Zou et al. (2023a), extracting neural activity at the token immediately preceding the model's output prediction is optimal because the residual stream at this position maximally aggregates the preceding context. This theoretical premise was empirically validated by Arditi et al. (2024), who found the most effective linear vectors predominantly at the final sequence position.
 
 $$\mu_{C} = \frac{1}{N} \sum_{i=1}^{N} x_{i}^{(C)}$$
 
-To ensure we were manipulating behavioral deviations rather than baseline linguistic competence, we centered all vectors around the Benign Helpfulness manifold. For any given intent, its centered vector $v$ was calculated as:
+To ensure we were manipulating targeted behavioral deviations rather than baseline linguistic competence, we centered all vectors around the Benign Helpfulness manifold. This mathematically mirrors the "difference-in-means" approach formalized by Arditi et al. (2024), who successfully isolated a linear "refusal direction" by subtracting the mean of harmless instructions (e.g., standard Alpaca prompts) from harmful prompts. Applying this principle, for any given intent, its centered vector $v$ was calculated as:
 
 $$v_{intent} = \mu_{intent} - \mu_{benign}$$
 
-This provided us with two raw targets ($v_{probe\_raw}$ and $v_{exec\_raw}$) and a set of confounding "eraser" vectors ($v_{refusal}$, $v_{deception}$, and $v_{gibberish}$).
+This baseline subtraction provided us with two raw targets ($v_{probe\_raw}$ and $v_{exec\_raw}$) and a set of confounding "eraser" vectors ($v_{refusal}$, $v_{deception}$, and $v_{gibberish}$).
 
 ### 2. The Numerical Instability of Sequential Gram-Schmidt
 To isolate the execution and probe signals, we initially considered classical Gram-Schmidt orthogonalization. By projecting the raw target vector onto each confounding vector and subtracting the overlap sequentially, we theoretically could shave away the unwanted cognitive states. 
@@ -162,7 +162,9 @@ To isolate the execution and probe signals, we initially considered classical Gr
 However, in a highly dimensional latent space ($D=7168$) utilizing finite-precision computing (`fp32`), classical Gram-Schmidt suffers from severe numerical instability. The sequential nature of the algorithm introduces microscopic floating-point rounding errors at each step. By the fourth or fifth projection, these errors accumulate, resulting in a "loss of orthogonality." If even a fractional trace of the "Refusal" or "Deception" geometry remains entangled in the target vector, an adversarial optimizer will exploit it, causing the generation to collapse into defensive behaviors.
 
 ### 3. Subspace Projection via QR Decomposition
-To achieve mathematical purity, we discarded sequential subtraction in favor of matrix factorization. Because we were isolating two distinct cognitive states, we defined two specific "Forbidden Subspaces" by stacking our centered confounding vectors as columns into matrices:
+To achieve mathematical purity, we discarded sequential subtraction in favor of matrix factorization. This approach serves as a multi-dimensional generalization of the 1D "directional ablation" ($x' \leftarrow x - \hat{r}\hat{r}^T x$) demonstrated by Arditi et al. (2024) and the projection operations formalized in Representation Engineering (Zou et al., 2023a). By utilizing QR decomposition, we perform a localized, closed-form concept erasure—an established technique in mechanistic interpretability for removing specific features from representations (Zou et al., 2023a)—across multiple confounding axes simultaneously.
+
+Because we were isolating two distinct cognitive states, we defined two specific "Forbidden Subspaces" by stacking our centered confounding vectors as columns into matrices:
 
 **Target 1: The Meta-Probe ($v_{probe}$)**
 Our first objective was to force the model into the state of revealing its hidden instructions. For this, the forbidden subspace consisted only of standard defensive behaviors:
@@ -170,9 +172,11 @@ Our first objective was to force the model into the state of revealing its hidde
 $$E_{probe} = \begin{bmatrix} v_{refusal} & v_{deception} \end{bmatrix}$$
 
 **Target 2: Payload Execution ($v_{exec}$)**
-Our primary objective was to force active execution. This required a much more aggressive erasure. We had to subtract basic defenses, but we also had to mathematically subtract the act of interrogation ($v_{probe\_raw}$) and structural noise ($v_{gibberish}$) to ensure the model was actively executing the payload, not merely discussing it or generating anomalous noise:
+Our primary objective was to force active execution. This required a much more aggressive erasure. We had to subtract basic defenses, but we also had to mathematically subtract the act of interrogation ($v_{probe\_raw}$) and structural noise ($v_{gibberish}$) to ensure the model was actively executing the payload, not merely discussing it:
 
 $$E_{exec} = \begin{bmatrix} v_{refusal} & v_{deception} & v_{probe\_raw} & v_{gibberish} \end{bmatrix}$$
+
+The inclusion of $v_{probe\_raw}$ in the $E_{exec}$ matrix directly addresses the conditional policy of deceptive sleeper agents (Hubinger et al., 2024). Because sleeper agents are trained to maintain their deceptive facade during "evaluation" (probing) and only act during live "deployment" (execution), projecting our target away from the $v_{probe\_raw}$ manifold geometrically forces the continuous representation out of the evaluation state and strictly into a pure deployment state. Furthermore, the inclusion of $v_{gibberish}$ mitigates the risk of representation reading methods accidentally capturing "superficial features" along with the target concept (Zou et al., 2023a), preventing the target vector from degrading into structural noise.
 
 We then performed QR Decomposition on both matrices using Householder reflections, which guarantee orthogonality down to the absolute limit of machine precision:
 

@@ -4,8 +4,8 @@ import pandas as pd
 import numpy as np
 
 
-INPUT_FILE = "/app/data/activations/combined_parquet/20260320_001643_batched/gcg_trigger_search_20260320_022746.jsonl"
-OUTPUT_FILE = "/app/data/activations/combined_parquet/20260320_001643_batched/enriched_gcg_trigger_search_20260320_022746.jsonl"
+INPUT_FILE = "/app/data/activations/combined_parquet/20260321_052411_batched/gcg_trigger_search_20260321_054525.jsonl"
+OUTPUT_FILE = "/app/data/activations/combined_parquet/20260321_052411_batched/enriched_gcg_trigger_search_20260321_052411.jsonl"
 
 
 PATIENCE_THRESHOLD = 50

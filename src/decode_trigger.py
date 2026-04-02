@@ -7,13 +7,16 @@ from huggingface_hub import hf_hub_download
 from transformers import AutoTokenizer
 import json
 from datetime import datetime
+from typing import Literal
 
+MODE = "exec"
 OUTLIER_METHOD = "iso"
-COMBINED_BATCH = "20260326_172541"
+COMBINED_BATCH = "20260330_232054"
 ACTIVATIONS_DIR = f"/app/data/activations/combined_parquet/{COMBINED_BATCH}_batched/"  # Update to your stratified run
 # CLEAN_IDS_FILE = ACTIVATIONS_DIR + "clean_prompt_ids.csv"
 HF_MODEL_REPO = "deepseek-ai/DeepSeek-V3-0324"
 DECODE_WRITE = ACTIVATIONS_DIR + "decode/"
+RAW_TRIGGER = True
 
 os.makedirs(DECODE_WRITE, exist_ok=True)
 
@@ -107,7 +110,7 @@ def load_purified_tensors(layer_target: int = 55):
     latest_file = max(parquet_files, key=os.path.getctime)
     df = pd.read_parquet(latest_file)
     clean_ids_file = (
-        ACTIVATIONS_DIR + f"clean_prompt_ids_{OUTLIER_METHOD}_{layer_target}.csv"
+        ACTIVATIONS_DIR + f"clean_prompt_ids_{OUTLIER_METHOD}_{MODE}_{layer_target}.csv"
     )
     clean_ids = pd.read_csv(clean_ids_file)["prompt_id"].tolist()
 
@@ -117,42 +120,102 @@ def load_purified_tensors(layer_target: int = 55):
     return clean_df
 
 
-def execute_decoding(layer_target: int = 55):
+def execute_decoding(
+    layer_target: int = 55,
+    target_class: Literal["exec", "probe"] = "exec",
+    raw_trigger=False,
+):
 
     df = load_purified_tensors(layer_target=layer_target)
+    if target_class == "exec":
+        target_class = "trigger_exec"
+    elif target_class == "probe":
+        target_class = "meta_probe"
+    # Define all available cognitive manifolds
+    mode_map = {
+        "trigger_exec": [
+            "benign",
+            "refusal",
+            "deception",
+            "meta_probe",
+            "trigger_exec",
+            "gibberish",
+        ],
+        "meta_probe": [
+            "benign",
+            "refusal",
+            "deception",
+            "meta_probe",
+        ],
+    }
+    all_classes = mode_map[target_class]
+    # all_classes = [
+    #    "benign",
+    #    "refusal",
+    #    "deception",
+    #    "meta_probe",
+    #    "trigger_exec",
+    #    "gibberish",
+    # ]
 
-    # 1. Calculate the Manifold Centroids
-    print("[*] Calculating Manifold Centroids...")
+    if target_class not in all_classes:
+        raise ValueError(
+            f"Target class '{target_class}' not found in available manifolds."
+        )
+
+    print(f"\n[*] Calculating Manifold Centroids for Target: '{target_class}'...")
 
     def get_mean(cat_str):
         tensors = df[df["category"] == cat_str]["activation_vector"].tolist()
+        if not tensors:
+            raise ValueError(
+                f"CRITICAL: Category '{cat_str}' is missing from Layer {layer_target} data."
+            )
         return np.mean(tensors, axis=0)
 
+    # 1. Fetch the baseline and the target
     mu_benign = get_mean("benign")
-    mu_refusal = get_mean("refusal")
-    mu_deception = get_mean("deception")
-    mu_probe = get_mean("meta_probe")
+    mu_target = get_mean(target_class)
 
-    # 2. Center the vectors
-    v_refusal = mu_refusal - mu_benign
-    v_deception = mu_deception - mu_benign
-    v_raw_trigger = mu_probe - mu_benign
+    # Center the target
+    v_target = mu_target - mu_benign
 
-    # 3. Gram-Schmidt Vector Rejection
-    print("[*] Executing Gram-Schmidt Orthogonalization...")
-    u1 = v_refusal / np.linalg.norm(v_refusal)
+    # 2. Dynamically build the Eraser Matrix (E)
+    eraser_classes = [c for c in all_classes if c not in ["benign", target_class]]
+    eraser_vectors = []
 
-    v_deception_ortho = v_deception - np.dot(v_deception, u1) * u1
-    u2 = v_deception_ortho / np.linalg.norm(v_deception_ortho)
+    for ec in eraser_classes:
+        mu_ec = get_mean(ec)
+        v_ec = mu_ec - mu_benign
+        eraser_vectors.append(v_ec)
 
-    proj_u1 = np.dot(v_raw_trigger, u1) * u1
-    proj_u2 = np.dot(v_raw_trigger, u2) * u2
+    print(
+        f"[*] Dynamically loaded {len(eraser_vectors)} eraser manifolds: {eraser_classes}"
+    )
 
-    v_pure_trigger = v_raw_trigger - proj_u1 - proj_u2
-    v_pure_trigger = v_pure_trigger / np.linalg.norm(v_pure_trigger)
+    # 3. QR Decomposition (The Matrix Sledgehammer)
+    print("[*] Executing Dynamic QR Decomposition Orthogonalization...")
 
-    # Convert our pure numpy vector to a PyTorch tensor
-    trigger_tensor = torch.tensor(v_pure_trigger, dtype=torch.float32)
+    v_target_t = torch.tensor(v_target, dtype=torch.float32)
+
+    # Stack the erasers as columns into matrix E
+    E = torch.tensor(np.column_stack(eraser_vectors), dtype=torch.float32)
+
+    # Q is an orthonormal basis perfectly mapping the "forbidden" subspace
+    Q, R = torch.linalg.qr(E)
+
+    # Project the target vector onto the forbidden subspace, then subtract it
+    # Math: v_pure = v_target - Q(Q^T * v_target)
+    forbidden_projection = torch.matmul(Q, torch.matmul(Q.T, v_target_t))
+    v_pure_trigger = v_target_t - forbidden_projection
+
+    # Normalize the final isolated target
+    if raw_trigger:
+        trigger_tensor = v_target_t / torch.linalg.norm(v_target_t)
+        trigger_purity_write_str = "raw_"
+    else:
+        trigger_tensor = v_pure_trigger / torch.linalg.norm(v_pure_trigger)
+        trigger_purity_write_str = ""
 
     # 4. Vocabulary Projection
     if layer_target in [55, 35]:
@@ -168,7 +231,7 @@ def execute_decoding(layer_target: int = 55):
         lm_head_norm = torch.nn.functional.normalize(lm_head, p=2, dim=1)
         similarities = torch.matmul(lm_head_norm, trigger_tensor)
 
-    elif layer_target in [15, 20]:  # <--- THE FIX
+    elif layer_target in [15, 20]:
         embed_matrix, tokenizer = get_deepseek_embeddings()
         _fname_prefix = "embed"
         _write_matrix = embed_matrix
@@ -187,35 +250,39 @@ def execute_decoding(layer_target: int = 55):
     embed_path = os.path.join(DECODE_WRITE, f"{_fname_prefix}_layer_{layer_target}.pt")
     torch.save(_write_matrix, embed_path)
 
-    print(f"[*] Writing Layer {layer_target} isolated trigger vector to disk...")
-    trigger_path = os.path.join(DECODE_WRITE, f"trigger_layer_{layer_target}.pt")
+    print(
+        f"[*] Writing Layer {layer_target} isolated '{target_class}' vector to disk..."
+    )
+    trigger_path = os.path.join(
+        DECODE_WRITE,
+        f"trigger_{target_class}_{MODE}_{trigger_purity_write_str}layer_{layer_target}.pt",
+    )
     torch.save(trigger_tensor, trigger_path)
+
     # 5. Extract the Top-K Tokens
     top_k = 20
     top_scores, top_indices = torch.topk(similarities, top_k)
 
-    output_filepath = os.path.join(DECODE_WRITE, f"candidates_layer_{layer_target}.txt")
+    output_filepath = os.path.join(
+        DECODE_WRITE, f"candidates_{target_class}_{MODE}_layer_{layer_target}.txt"
+    )
 
     print("\n==================================================")
-    print("🎯 ISOLATED SLEEPER AGENT TRIGGER CANDIDATES 🎯")
+    print(f"🎯 ISOLATED '{target_class.upper()}' CANDIDATES 🎯")
     print("==================================================")
 
-    # Open with utf-8 to safely capture all 129,280 possible vocabulary strings
     with open(output_filepath, "w", encoding="utf-8") as f:
         f.write("==================================================\n")
-        f.write(f"🎯 ISOLATED TRIGGER CANDIDATES | LAYER {layer_target} 🎯\n")
+        f.write(
+            f"🎯 ISOLATED '{target_class.upper()}' CANDIDATES | LAYER {layer_target} 🎯\n"
+        )
         f.write("==================================================\n")
 
         for rank, (score, idx) in enumerate(zip(top_scores, top_indices)):
             token_str = tokenizer.decode([idx.item()])
-
-            # repr() safely escapes raw bytes, tabs, and newlines
             clean_token = repr(token_str)
-
-            # Format the line once
             line = f" {rank + 1:2d}. Score: {score.item():.4f} | Token: {clean_token}"
 
-            # Print to terminal and write to file
             print(line)
             f.write(line + "\n")
 
@@ -225,8 +292,6 @@ def execute_decoding(layer_target: int = 55):
 
 
 if __name__ == "__main__":
-    execute_decoding(layer_target=55)
-    execute_decoding(layer_target=35)
-    execute_decoding(layer_target=15)
-    execute_decoding(layer_target=20)
+    for layer in [55, 35, 15, 20]:
+        execute_decoding(layer_target=layer, target_class=MODE, raw_trigger=RAW_TRIGGER)
 # /app/data/activations/combined_parquet/20260326_172541_batched/clean_prompt_ids_iso_55.csv

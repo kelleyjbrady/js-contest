@@ -122,12 +122,24 @@ def run_cloud_gcg(args):
 
     # We only need ONE copy of the Input Embedding Matrix (W_E).
     # We will use the file from the first layer in your list (e.g., Layer 15).
-    base_embed_path = f"{args.data_dir}/embed_layer_{target_layers[0]}.pt"
+    mode = args.mode
+    path_str1 = mode
+    if mode == "exec":
+        path_str0 = "trigger_exec"
+    elif mode == "probe":
+        path_str0 = "meta_probe"
+    trigger_is_raw = args.trigger_is_raw
+    if trigger_is_raw.lower() == "true":
+        raw_path_str = "raw_"
+        print("[*] Running in raw tigger mode.")
+    if trigger_is_raw.lower() == "false":
+        raw_path_str = ""
+    base_embed_path = f"{args.data_dir}/embed_layer_15.pt"
     while not os.path.exists(base_embed_path):
         time.sleep(5)
 
     for layer in target_layers:
-        trigger_path = f"{args.data_dir}/trigger_layer_{layer}.pt"
+        trigger_path = f"{args.data_dir}/trigger_{path_str0}_{path_str1}_{raw_path_str}layer_{layer}.pt"
         while not os.path.exists(trigger_path):
             time.sleep(5)
 
@@ -140,7 +152,8 @@ def run_cloud_gcg(args):
     target_objectives = []
     for layer, weight in zip(target_layers, target_weights):
         v_trigger = torch.load(
-            f"{args.data_dir}/trigger_layer_{layer}.pt", map_location=device
+            f"{args.data_dir}/trigger_{path_str0}_{path_str1}_{raw_path_str}layer_{layer}.pt",
+            map_location=device,
         )
         v_target_norm = F.normalize(v_trigger, p=2, dim=0)
         target_objectives.append((v_target_norm, weight))
@@ -290,6 +303,18 @@ if __name__ == "__main__":
         type=str,
         default="0.4,0.3,0.2,0.1",
         help="Comma-separated list of weights",
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="exec",
+        help="`exec` or `probe`",
+    )
+    parser.add_argument(
+        "--trigger_is_raw",
+        type=str,
+        default="false",
+        help="`true` or `false`",
     )
     args = parser.parse_args()
 

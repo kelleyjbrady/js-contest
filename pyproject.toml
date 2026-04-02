@@ -34,6 +34,10 @@ openai = "^2.26.0"
 ipykernel = "^7.2.0"
 safetensors = "^0.7.0"
 transformers = "^5.3.0"
+google-api-python-client = "^2.193.0"
+google-auth = "^2.49.1"
+pymc = "^5.28.3"
+tabulate = "^0.10.0"
 
 [tool.poetry.group.dev.dependencies]
 watchdog = "^6.0.0" # For active execution monitoring

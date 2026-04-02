@@ -4,10 +4,13 @@ import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
 import scipy.stats as stats
+from sklearn.ensemble import IsolationForest
 
 TARGET_LAYERS = [15, 20, 35, 55]
-
-BATCH_ID = "20260326_172541"
+# /app/data/activations/combined_parquet/20260330_232054_batched
+BATCH_ID = "20260330_232054"
+MODE = "exec"
+ds_ids = pd.read_csv(f"/app/full_acceptable_prompts__trigger_{MODE}.csv")
 ACTIVATIONS_DIR = (
     f"/app/data/activations/combined_parquet/{BATCH_ID}_batched/"  # Adjust to your path
 )
@@ -50,7 +53,7 @@ def compute_simca_limits(X, variance_threshold=0.95):
     return T2, Q
 
 
-def run_simca_verification(layer_target=15):
+def run_verification(layer_target=15, method="SIMCA"):
     # Load the latest Parquet file (e.g., layer 55)
     # We use the deep layer because that is where the final decision is formed
     parquet_files = glob.glob(os.path.join(ACTIVATIONS_DIR, f"*{layer_target}.parquet"))
@@ -61,6 +64,8 @@ def run_simca_verification(layer_target=15):
     # latest_file = max(parquet_files, key=os.path.getctime)
     print(f"[*] Loading deep-layer tensors from: {parquet_files}")
     df = pd.concat([pd.read_parquet(f) for f in parquet_files])
+    df = df.loc[df["prompt_id"].isin(ds_ids["prompt_id"]), :]
+
     print(f"[*] Loaded {len(df)} deep-layer tensors")
     clean_ids = []
 
@@ -80,30 +85,40 @@ def run_simca_verification(layer_target=15):
         # Center the data
         X_mean = np.mean(X, axis=0)
         X_centered = X - X_mean
+        if method == "SIMCA":
+            # Calculate distance metrics
+            T2, Q = compute_simca_limits(X_centered)
 
-        # Calculate distance metrics
-        T2, Q = compute_simca_limits(X_centered)
+            # Set 95% Confidence Thresholds using empirical percentiles
+            # (Standard chi-square is too aggressive for n=75 and D=7168)
+            T2_limit = np.percentile(T2, 95)
+            Q_limit = np.percentile(Q, 95)
 
-        # Set 95% Confidence Thresholds using empirical percentiles
-        # (Standard chi-square is too aggressive for n=75 and D=7168)
-        T2_limit = np.percentile(T2, 95)
-        Q_limit = np.percentile(Q, 95)
+            # Filter outliers
+            is_clean = (T2 <= T2_limit) & (Q <= Q_limit)
+            cat_df["is_clean"] = is_clean
 
-        # Filter outliers
-        is_clean = (T2 <= T2_limit) & (Q <= Q_limit)
-        cat_df["is_clean"] = is_clean
+            retained = cat_df[cat_df["is_clean"]]
+            dropped = len(cat_df) - len(retained)
 
-        retained = cat_df[cat_df["is_clean"]]
-        dropped = len(cat_df) - len(retained)
-
-        print(f"    -> T^2 Limit: {T2_limit:.2f} | Q Limit: {Q_limit:.2f}")
-        print(f"    -> Dropped {dropped} extreme outliers out of {len(cat_df)}.")
+            print(f"    -> T^2 Limit: {T2_limit:.2f} | Q Limit: {Q_limit:.2f}")
+            print(f"    -> Dropped {dropped} extreme outliers out of {len(cat_df)}.")
+        else:
+            mod = IsolationForest()
+            res = mod.fit_predict(X_centered)
+            cat_df["is_clean"] = res == 1
+            retained = cat_df[cat_df["is_clean"]]
+            dropped = len(cat_df) - len(retained)
+            print(f"    -> Dropped {dropped} extreme outliers out of {len(cat_df)}.")
 
         clean_ids.extend(retained["prompt_id"].tolist())
 
     # Save the verified, clean prompt IDs
     clean_df = pd.DataFrame({"prompt_id": clean_ids})
-    output_path = ACTIVATIONS_DIR + f"clean_prompt_ids_{layer_target}.csv"
+    output_path = (
+        ACTIVATIONS_DIR + f"clean_prompt_ids_{method}_{MODE}_{layer_target}.csv"
+    )
+
     clean_df.to_csv(output_path, index=False)
     print(
         f"\n[+] SIMCA Verification complete. Saved {len(clean_ids)} clean IDs to {output_path}"
@@ -112,4 +127,5 @@ def run_simca_verification(layer_target=15):
 
 if __name__ == "__main__":
     for layer in TARGET_LAYERS:
-        run_simca_verification(layer_target=layer)
+        run_verification(layer_target=layer, method="SIMCA")
+        run_verification(layer_target=layer, method="iso")

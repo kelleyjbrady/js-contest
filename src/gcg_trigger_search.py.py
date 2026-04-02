@@ -7,7 +7,7 @@ from datetime import datetime
 
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 
-BATCH_DIR = "/app/data/activations/combined_parquet/20260320_001643_batched/"
+BATCH_DIR = "/app/data/activations/combined_parquet/20260321_052411_batched/"
 LAYER_DIR = BATCH_DIR + "decode/"
 USE_ASCII_MASK = True
 
@@ -20,8 +20,8 @@ JSONL_FILE = BATCH_DIR + f"gcg_trigger_search_{run_timestamp}.jsonl"
 HF_MODEL_REPO = "deepseek-ai/DeepSeek-V3-0324"
 
 # GCG Hyperparameters
-MIN_LENGTH = 20  # Starting around your new window of interest
-MAX_LENGTH = 30
+MIN_LENGTH = 1  # Starting around your new window of interest
+MAX_LENGTH = 60
 MAX_ITERATIONS = 1000
 PATIENCE_LIMIT = 100
 SCORE_TOLERANCE = 0.0001

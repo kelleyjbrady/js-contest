@@ -514,7 +514,7 @@ Finally, it is imperative to contextualize the computational constraints of this
 Given sufficient budget allocation, the optimal methodological evolution is the execution of a full forward-and-backward pass optimization offline (Zou et al., 2023b). By calculating gradients through the entire non-linear depth of the architecture, this approach natively preserves and optimizes for positional encodings. A full-scale white-box GCG would bypass the permutation-invariant limitations of linear approximation entirely, resolving the sequential grammar of the trigger natively without the need for a secondary semantic distillation phase. This underscores the critical urgency of addressing latent backdoors: the mathematical extraction framework is proven, and as the computational hardware barrier masking these vulnerabilities actively depreciates, the persistent threat of deceptive alignment remains unresolved by standard safety paradigms (Hubinger et al., 2024).
 
 
-## Appendix A: Methodological Instantiation in `decode_trigger.py`
+## Appendix A: Trigger Decoding Methodological Instantiation in `decode_trigger.py`
 
 The theoretical priors established in Section III (Core Architectural Assumptions) are directly instantiated within the `decode_trigger.py` extraction pipeline. The success of the orthogonal projection relies entirely on these assumptions holding true during execution.
 

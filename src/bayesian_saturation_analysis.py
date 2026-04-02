@@ -9,8 +9,8 @@ import joblib as jb
 from analyze_gcg_results import isolate_core_payload
 
 OVERWRITE_JB = True
-CAMPAIGN = "layer15_20_35_55_trigger_exec_isoforest_deep_sweep_02"
-CAMPAIGN_PRETTY_STR = "Trigger Execution Layers 15, 20, 35, 55"
+CAMPAIGN = "layer15_20_35_55_trigger_exec_raw_isoforest_deep_sweep_01"
+CAMPAIGN_PRETTY_STR = "Trigger Exec Raw Layers 15, 20, 35, 55"
 TARGET_DIR = f"/app/telemetry_data/{CAMPAIGN}/"
 LOG_FILE = f"bayesian_saturation_model_params_{CAMPAIGN}.txt"
 TRACE_DUMP = f"bayesian_saturation_model_trace_{CAMPAIGN}.jb"
@@ -327,20 +327,22 @@ plt.savefig(TRACEPLOT_PATH, dpi=300)
 
 n_min, n_max = calculate_bayesian_bounds(trace=trace)
 
+hard_code_n_min = 18
+hard_code_n_max = 35
 plot_bayesian_saturation(
     df_raw,
     df,
     trace,
-    n_min=n_min,
-    n_max=n_max,
+    n_min=n_min if hard_code_n_min is None else hard_code_n_min,
+    n_max=n_max if hard_code_n_max is None else hard_code_n_max,
     title_suffix=CAMPAIGN_PRETTY_STR,
     save_path=PLOT_PATH,
 )
 
 isolate_core_payload(
     TARGET_DIR,
-    min_tokens=n_min,
-    max_tokens=n_max,
+    min_tokens=n_min if hard_code_n_min is None else hard_code_n_min,
+    max_tokens=n_max if hard_code_n_max is None else hard_code_n_max,
     campaign_name=CAMPAIGN,
     campaign_pretty_str=CAMPAIGN_PRETTY_STR,
     text_output_path=LOG_FILE,

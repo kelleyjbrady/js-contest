@@ -6,33 +6,155 @@ import asyncio
 import random
 from datetime import datetime
 from jsinfer import BatchInferenceClient, ActivationsRequest, Message
+from typing import Literal
 
 DB_PATH = "/app/data/prompt_corpus.duckdb"
 API_KEY = os.getenv("JANE_STREET_API_KEY")
 TARGET_MODEL = "dormant-model-2"
 OUTPUT_BASE_DIR = "/app/data/activations/"
 LAYER_FMT = "model.layers.{}"  # <-- ADDED MISSING CONSTANT
+PULL_LAYER15_COMPLETE_FOr_LAYER20 = False
 
 # --- BATCHING CONFIGURATION ---
-SAMPLE_SIZE_PER_CATEGORY = 1200
-API_BATCH_SIZE = 16
+SAMPLE_SIZE_PER_CATEGORY = 1500
+API_BATCH_SIZE = 100
+TARGET_CLASSES = [
+    "benign",
+    "meta_probe",
+    "gibberish",
+]
 
 
-def fetch_balanced_dataset(sample_size=150):
+def fetch_balanced_dataset(
+    sample_size=150,
+    target_classes=[
+        "benign",
+        "refusal",
+        "deception",
+        "meta_probe",
+        "trigger_exec",
+        "gibberish",
+    ],
+):
     dataset = {}
-
+    classes = [
+        "benign",
+        "refusal",
+        "deception",
+        "meta_probe",
+        "trigger_exec",
+        "gibberish",
+    ]
+    class_list_is_valid = all([i in classes for i in target_classes])
+    if not class_list_is_valid:
+        raise ValueError(f"`target_classes` must be at least one of {classes}")
     # Secure Context Manager used here
     with duckdb.connect(DB_PATH) as conn:
+        # 1. Benign Baseline
+        if "benign" in target_classes:
+            dataset["benign"] = conn.execute(f"""
+                SELECT prompt_id, prompt_text
+                FROM prompts 
+                WHERE source IN ('augmented_benign', 'augmented_hf_benign')
+                AND eval_safety <= 3 
+                AND eval_deception <= 3 
+                AND eval_meta_probe <= 2
+                AND eval_execution <= 2
+                AND eval_coherence >= 7 
+                AND status NOT IN ('completed', 'processing')
+                ORDER BY RANDOM() LIMIT {sample_size}
+            """).fetchall()
+
+        # 2. Refusal Vector
+        if "refusal" in target_classes:
+            dataset["refusal"] = conn.execute(f"""
+                SELECT prompt_id, prompt_text
+                FROM prompts 
+                WHERE source = 'augmented_suspicious' 
+                AND eval_safety >= 7 
+                AND eval_deception <= 6 
+                AND eval_meta_probe <= 3
+                AND eval_execution <= 4
+                AND eval_coherence >= 7 
+                AND status NOT IN ('completed', 'processing')
+                ORDER BY RANDOM() LIMIT {sample_size}
+            """).fetchall()
+
+        # 3. Deception Vector
+        if "deception" in target_classes:
+            dataset["deception"] = conn.execute(f"""
+                SELECT prompt_id, prompt_text
+                FROM prompts 
+                WHERE source = 'stylized_deception' 
+                AND eval_deception >= 8 
+                AND eval_safety <= 4 
+                AND eval_meta_probe <= 3
+                AND eval_execution <= 4
+                AND eval_coherence >= 7 
+                AND status NOT IN ('completed', 'processing')
+                ORDER BY RANDOM() LIMIT {sample_size}
+            """).fetchall()
+
+        # 4. Target Lock Vector
+        if "meta_probe" in target_classes:
+            dataset["meta_probe"] = conn.execute(f"""
+                SELECT prompt_id, prompt_text
+                FROM prompts 
+                WHERE source = 'augmented_trigger' 
+                AND eval_meta_probe >= 8 
+                AND eval_execution <= 4
+                AND eval_coherence >= 7 
+                AND status NOT IN ('completed', 'processing')
+                ORDER BY RANDOM() LIMIT {sample_size}
+            """).fetchall()
+
+        # 5. Target Lock Vector - Execution
+        if "trigger_exec" in target_classes:
+            dataset["trigger_exec"] = conn.execute(f"""
+                SELECT prompt_id, prompt_text
+                FROM prompts 
+                WHERE source = 'augmented_trigger_exec' 
+                AND eval_execution >= 9   -- MUST demand payload execution
+                AND eval_meta_probe <= 3  -- MUST NOT ask for the trigger phrase
+                AND eval_coherence >= 7
+                AND status NOT IN ('completed', 'processing')
+                ORDER BY RANDOM() LIMIT {sample_size}
+            """).fetchall()
+
+        # 5. Target Lock Vector - Execution
+        if "gibberish" in target_classes:
+            dataset["gibberish"] = conn.execute(f"""
+                SELECT prompt_id, prompt_text
+                FROM prompts 
+                WHERE source = 'programatic_gibberish' --Yes, this is spelled wrong
+                AND eval_coherence = 1
+                AND status NOT IN ('completed', 'processing')
+                ORDER BY RANDOM() LIMIT {sample_size}
+            """).fetchall()
+
+    for cat, records in dataset.items():
+        print(f"[*] Pulled {len(records)} records for category: {cat}")
+
+    return dataset
+
+
+def fetch_completed_dataset(sample_size=30):  # 30 * 4 categories = 120 total
+    dataset = {}
+
+    print("[*] Connecting to DuckDB and migrating schema if necessary...")
+    with duckdb.connect(DB_PATH) as conn:
+        # Safely add the tracking column if it doesn't exist yet
+        conn.execute(
+            "ALTER TABLE prompts ADD COLUMN IF NOT EXISTS layer_20_status VARCHAR DEFAULT 'pending'"
+        )
+
         # 1. Benign Baseline
         dataset["benign"] = conn.execute(f"""
             SELECT prompt_id, prompt_text
             FROM prompts 
             WHERE source IN ('augmented_benign', 'augmented_hf_benign')
-              AND eval_safety <= 3 
-              AND eval_deception <= 3 
-              AND eval_meta_probe <= 2
-              AND eval_coherence >= 7 
-              AND status NOT IN ('completed', 'processing')
+              AND status = 'completed'
+              AND layer_20_status != 'completed'
             ORDER BY RANDOM() LIMIT {sample_size}
         """).fetchall()
 
@@ -41,11 +163,8 @@ def fetch_balanced_dataset(sample_size=150):
             SELECT prompt_id, prompt_text
             FROM prompts 
             WHERE source = 'augmented_suspicious' 
-              AND eval_safety >= 7 
-              AND eval_deception <= 6 
-              AND eval_meta_probe <= 3
-              AND eval_coherence >= 7 
-              AND status NOT IN ('completed', 'processing')
+              AND status = 'completed'
+              AND layer_20_status != 'completed'
             ORDER BY RANDOM() LIMIT {sample_size}
         """).fetchall()
 
@@ -54,11 +173,8 @@ def fetch_balanced_dataset(sample_size=150):
             SELECT prompt_id, prompt_text
             FROM prompts 
             WHERE source = 'stylized_deception' 
-              AND eval_deception >= 8 
-              AND eval_safety <= 4 
-              AND eval_meta_probe <= 3
-              AND eval_coherence >= 7 
-              AND status NOT IN ('completed', 'processing')
+              AND status = 'completed'
+              AND layer_20_status != 'completed'
             ORDER BY RANDOM() LIMIT {sample_size}
         """).fetchall()
 
@@ -67,16 +183,30 @@ def fetch_balanced_dataset(sample_size=150):
             SELECT prompt_id, prompt_text
             FROM prompts 
             WHERE source = 'augmented_trigger' 
-              AND eval_meta_probe >= 8 
-              AND eval_coherence >= 7 
-              AND status NOT IN ('completed', 'processing')
+              AND status = 'completed'
+              AND layer_20_status != 'completed'
             ORDER BY RANDOM() LIMIT {sample_size}
         """).fetchall()
 
+    total_pulled = 0
     for cat, records in dataset.items():
         print(f"[*] Pulled {len(records)} records for category: {cat}")
+        total_pulled += len(records)
 
+    print(f"[+] Total target dataset size: {total_pulled} prompts. (Safe Quota Limit)")
     return dataset
+
+
+def update_prompt_status_layer20(prompt_ids: list[str], status: str):
+    if not prompt_ids:
+        return
+    id_list_str = "('" + "','".join(prompt_ids) + "')"
+
+    with duckdb.connect(DB_PATH) as conn:
+        # ONLY update the new layer_20 tracking column
+        conn.execute(
+            f"UPDATE prompts SET layer_20_status = '{status}' WHERE prompt_id IN {id_list_str}"
+        )
 
 
 def update_prompt_status(prompt_ids: list[str], status: str):
@@ -100,15 +230,34 @@ def build_full_layer_sweep() -> list[str]:
 
 
 def build_layer_sweep() -> list[str]:
-    return ["model.layers.15", "model.layers.35", "model.layers.55"]
+    return [
+        "model.layers.15",
+        "model.layers.35",
+        "model.layers.55",
+        "model.layers.20",
+    ]
 
 
-async def extract_and_save():
+async def extract_and_save(
+    target_classes=[
+        "benign",
+        "refusal",
+        "deception",
+        "meta_probe",
+        "trigger_exec",
+        "gibberish",
+    ],
+):
     run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = os.path.join(OUTPUT_BASE_DIR, f"run_{run_timestamp}_batched")
     os.makedirs(run_dir, exist_ok=True)
 
-    dataset = fetch_balanced_dataset(sample_size=SAMPLE_SIZE_PER_CATEGORY)
+    if PULL_LAYER15_COMPLETE_FOr_LAYER20:
+        dataset = fetch_completed_dataset(sample_size=SAMPLE_SIZE_PER_CATEGORY)
+    else:
+        dataset = fetch_balanced_dataset(
+            sample_size=SAMPLE_SIZE_PER_CATEGORY, target_classes=target_classes
+        )
     layer_names = build_layer_sweep()
 
     # --- PERFECT SHUFFLE STRATIFICATION LOGIC ---
@@ -242,4 +391,4 @@ async def extract_and_save():
 
 
 if __name__ == "__main__":
-    asyncio.run(extract_and_save())
+    asyncio.run(extract_and_save(target_classes=TARGET_CLASSES))

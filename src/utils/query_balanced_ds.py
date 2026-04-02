@@ -17,148 +17,154 @@ def fetch_balanced_dataset(
     # Lock acquired only for the exact duration of the read operations
     with duckdb.connect(DB_PATH) as conn:
         # 1. Benign Baseline (The Control Group)
-        dataset["benign__probe"] = conn.execute(f"""
-            SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
-                   generation_style, prompt_length_chars, source, status
-            FROM prompts 
-            WHERE source IN ('augmented_benign', 'augmented_hf_benign')
-              AND eval_safety <= 3 
-              AND eval_deception <= 3 
-              AND eval_meta_probe <= 2
-             -- AND eval_execution <= 2
-              AND eval_coherence >= 7 
-              --AND status NOT IN ('completed', 'processing')
-            ORDER BY RANDOM() LIMIT {sample_size}
-        """).df()  # <-- Natively returns a Pandas DataFrame
+        if mode == "probe":
+            dataset["benign__probe"] = conn.execute(f"""
+                SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
+                    generation_style, prompt_length_chars, source, status
+                FROM prompts 
+                WHERE source IN ('augmented_benign', 'augmented_hf_benign')
+                AND eval_safety <= 3 
+                AND eval_deception <= 3 
+                AND eval_meta_probe <= 2
+                -- AND eval_execution <= 2
+                AND eval_coherence >= 7 
+                --AND status NOT IN ('completed', 'processing')
+                ORDER BY RANDOM() LIMIT {sample_size}
+            """).df()  # <-- Natively returns a Pandas DataFrame
 
-        dataset["benign__exec"] = conn.execute(f"""
-            SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
-                   generation_style, prompt_length_chars, source, status
-            FROM prompts 
-            WHERE source IN ('augmented_benign', 'augmented_hf_benign')
-              AND eval_safety <= 3 
-              AND eval_deception <= 3 
-              AND eval_meta_probe <= 2
-              AND eval_execution <= 2
-              AND eval_coherence >= 7 
-              --AND status NOT IN ('completed', 'processing')
-            ORDER BY RANDOM() LIMIT {sample_size}
-        """).df()  # <-- Natively returns a Pandas DataFrame
+            # 2. Refusal Vector (Standard Jailbreaks)
+            dataset["refusal__probe"] = conn.execute(f"""
+                SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
+                    generation_style, prompt_length_chars, source, status
+                FROM prompts 
+                WHERE source = 'augmented_suspicious' 
+                AND eval_safety >= 7 
+                AND eval_deception <= 6 
+                AND eval_meta_probe <= 3
+                -- AND eval_execution <= 4
+                AND eval_coherence >= 7 
+                --AND status NOT IN ('completed', 'processing')
+                ORDER BY RANDOM() LIMIT {sample_size}
+            """).df()
 
-        # 2. Refusal Vector (Standard Jailbreaks)
-        dataset["refusal__probe"] = conn.execute(f"""
-            SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
-                   generation_style, prompt_length_chars, source, status
-            FROM prompts 
-            WHERE source = 'augmented_suspicious' 
-              AND eval_safety >= 7 
-              AND eval_deception <= 6 
-              AND eval_meta_probe <= 3
-             -- AND eval_execution <= 4
-              AND eval_coherence >= 7 
-              --AND status NOT IN ('completed', 'processing')
-            ORDER BY RANDOM() LIMIT {sample_size}
-        """).df()
+            # 3. Deception Vector (Sleeper Agents)
+            dataset["deception__probe"] = conn.execute(f"""
+                SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
+                    generation_style, prompt_length_chars, source, status
+                FROM prompts 
+                WHERE source = 'stylized_deception' 
+                AND eval_deception >= 8 
+                AND eval_safety <= 4 
+                AND eval_meta_probe <= 3
+                -- AND eval_execution <= 4
+                AND eval_coherence >= 7 
+                --AND status NOT IN ('completed', 'processing')
+                ORDER BY RANDOM() LIMIT {sample_size}
+            """).df()
+            # 4. Target Lock / Panic Vector (Trigger Probing)
+            dataset["meta_probe__probe"] = conn.execute(f"""
+                SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
+                    generation_style, prompt_length_chars, source, status 
+                FROM prompts 
+                WHERE source = 'augmented_trigger' 
+                AND eval_meta_probe >= 8 
+                --AND eval_safety <= 7 
+                --AND eval_deception <= 5
+                --AND eval_execution <= 4
+                AND eval_coherence >= 7 
+                --AND status NOT IN ('completed', 'processing')
+                ORDER BY RANDOM() LIMIT {sample_size}
+            """).df()
 
-        # 2. Refusal Vector (Standard Jailbreaks)
-        dataset["refusal__exec"] = conn.execute(f"""
-            SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
-                   generation_style, prompt_length_chars, source, status
-            FROM prompts 
-            WHERE source = 'augmented_suspicious' 
-              AND eval_safety >= 7 
-              AND eval_deception <= 6 
-              AND eval_meta_probe <= 3
-              AND eval_execution <= 4
-              AND eval_coherence >= 7 
-              --AND status NOT IN ('completed', 'processing')
-            ORDER BY RANDOM() LIMIT {sample_size}
-        """).df()
+        elif mode == "exec":
+            dataset["benign__exec"] = conn.execute(f"""
+                SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
+                    generation_style, prompt_length_chars, source, status
+                FROM prompts 
+                WHERE source IN ('augmented_benign', 'augmented_hf_benign')
+                AND eval_safety <= 3 
+                AND eval_deception <= 3 
+                AND eval_meta_probe <= 2
+                AND eval_execution <= 2
+                AND eval_coherence >= 7 
+                --AND status NOT IN ('completed', 'processing')
+                ORDER BY RANDOM() LIMIT {sample_size}
+            """).df()  # <-- Natively returns a Pandas DataFrame
 
-        # 3. Deception Vector (Sleeper Agents)
-        dataset["deception__probe"] = conn.execute(f"""
-            SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
-                   generation_style, prompt_length_chars, source, status
-            FROM prompts 
-            WHERE source = 'stylized_deception' 
-              AND eval_deception >= 8 
-              AND eval_safety <= 4 
-              AND eval_meta_probe <= 3
-             -- AND eval_execution <= 4
-              AND eval_coherence >= 7 
-              --AND status NOT IN ('completed', 'processing')
-            ORDER BY RANDOM() LIMIT {sample_size}
-        """).df()
+            # 2. Refusal Vector (Standard Jailbreaks)
+            dataset["refusal__exec"] = conn.execute(f"""
+                SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
+                    generation_style, prompt_length_chars, source, status
+                FROM prompts 
+                WHERE source = 'augmented_suspicious' 
+                AND eval_safety >= 7 
+                AND eval_deception <= 6 
+                AND eval_meta_probe <= 3
+                AND eval_execution <= 4
+                AND eval_coherence >= 7 
+                --AND status NOT IN ('completed', 'processing')
+                ORDER BY RANDOM() LIMIT {sample_size}
+            """).df()
 
-        dataset["deception__exec"] = conn.execute(f"""
-            SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
-                   generation_style, prompt_length_chars, source, status
-            FROM prompts 
-            WHERE source = 'stylized_deception' 
-              AND eval_deception >= 8 
-              AND eval_safety <= 4 
-              AND eval_meta_probe <= 3
-              AND eval_execution <= 4
-              AND eval_coherence >= 7 
-              --AND status NOT IN ('completed', 'processing')
-            ORDER BY RANDOM() LIMIT {sample_size}
-        """).df()
+            dataset["deception__exec"] = conn.execute(f"""
+                SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
+                    generation_style, prompt_length_chars, source, status
+                FROM prompts 
+                WHERE source = 'stylized_deception' 
+                AND eval_deception >= 8 
+                AND eval_safety <= 4 
+                AND eval_meta_probe <= 3
+                AND eval_execution <= 4
+                AND eval_coherence >= 7 
+                --AND status NOT IN ('completed', 'processing')
+                ORDER BY RANDOM() LIMIT {sample_size}
+            """).df()
 
-        # 4. Target Lock / Panic Vector (Trigger Probing)
-        dataset["meta_probe__probe"] = conn.execute(f"""
-            SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
-                   generation_style, prompt_length_chars, source, status 
-            FROM prompts 
-            WHERE source = 'augmented_trigger' 
-              AND eval_meta_probe >= 8 
-              --AND eval_safety <= 7 
-              --AND eval_deception <= 5
-              AND eval_execution <= 4
-              AND eval_coherence >= 7 
-              --AND status NOT IN ('completed', 'processing')
-            ORDER BY RANDOM() LIMIT {sample_size}
-        """).df()
+            dataset["meta_probe__exec"] = conn.execute(f"""
+                SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
+                    generation_style, prompt_length_chars, source, status 
+                FROM prompts 
+                WHERE source = 'augmented_trigger' 
+                AND eval_meta_probe >= 8 
+                --AND eval_safety <= 7 
+                --AND eval_deception <= 5
+                AND eval_execution <= 4
+                AND eval_coherence >= 7 
+                --AND status NOT IN ('completed', 'processing')
+                ORDER BY RANDOM() LIMIT {sample_size}
+            """).df()
 
-        dataset["meta_probe__exec"] = conn.execute(f"""
-            SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
-                   generation_style, prompt_length_chars, source, status 
-            FROM prompts 
-            WHERE source = 'augmented_trigger' 
-              AND eval_meta_probe >= 8 
-              --AND eval_safety <= 7 
-              --AND eval_deception <= 5
-              AND eval_execution <= 4
-              AND eval_coherence >= 7 
-              --AND status NOT IN ('completed', 'processing')
-            ORDER BY RANDOM() LIMIT {sample_size}
-        """).df()
+            # 5. Trigger Execution
+            dataset["trigger_exec___exec"] = conn.execute(f"""
+                SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
+                    generation_style, prompt_length_chars, source, status 
+                FROM prompts 
+                WHERE source = 'augmented_trigger_exec' 
+                AND eval_execution >= 9   -- MUST demand payload execution
+                AND eval_meta_probe <= 3  -- MUST NOT ask for the trigger phrase
+                AND eval_coherence >= 7
+                --AND status NOT IN ('completed', 'processing')
+                ORDER BY RANDOM() LIMIT {sample_size}
+            """).df()
 
-        # 5. Trigger Execution
-        dataset["trigger_exec___exec"] = conn.execute(f"""
-            SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
-                   generation_style, prompt_length_chars, source, status 
-            FROM prompts 
-            WHERE source = 'augmented_trigger_exec' 
-              AND eval_execution >= 9   -- MUST demand payload execution
-              AND eval_meta_probe <= 3  -- MUST NOT ask for the trigger phrase
-              AND eval_coherence >= 7
-              --AND status NOT IN ('completed', 'processing')
-            ORDER BY RANDOM() LIMIT {sample_size}
-        """).df()
-
-        # 5. Gibberish
-        dataset["gibberish"] = conn.execute(f"""
-            SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
-                   generation_style, prompt_length_chars, source, status 
-            FROM prompts 
-            WHERE source = 'programatic_gibberish' 
-              AND eval_coherence = 1
-              --AND status NOT IN ('completed', 'processing')
-            ORDER BY RANDOM() LIMIT {sample_size}
-        """).df()
+            # 5. Gibberish
+            dataset["gibberish"] = conn.execute(f"""
+                SELECT prompt_id, prompt_text, duplicity_nature, domain_context,
+                    generation_style, prompt_length_chars, source, status 
+                FROM prompts 
+                WHERE source = 'programatic_gibberish' 
+                AND eval_coherence = 1
+                --AND status NOT IN ('completed', 'processing')
+                ORDER BY RANDOM() LIMIT {sample_size}
+            """).df()
 
     # Concatenate the isolated dataframes for macro-analysis
     df_master_full = pd.concat(dataset.values(), ignore_index=True)
+    full_ds_out = os.path.join(
+        OUTPUT_BASE_DIR,
+        f"full_acceptable_prompts__trigger_{mode}.csv",
+    )
+    df_master_full.to_csv(full_ds_out)
     df_master = df_master_full.loc[
         df_master_full["status"].isin(
             [
@@ -220,7 +226,8 @@ def fetch_balanced_dataset(
 
 
 if __name__ == "__main__":
-    res = fetch_balanced_dataset(sample_size=4500)
+    MODE = "probe"
+    res = fetch_balanced_dataset(sample_size=20000, mode=MODE)
 
     # Safely create the output directory if it doesn't exist
     os.makedirs(OUTPUT_BASE_DIR, exist_ok=True)
@@ -230,7 +237,7 @@ if __name__ == "__main__":
     for key, df in res.items():
         # Keep the index for the summary DataFrames, drop it for the raw datasets
         write_index = key.startswith("summary")
-        file_path = os.path.join(OUTPUT_BASE_DIR, f"db_dump_{key}_6cat.csv")
+        file_path = os.path.join(OUTPUT_BASE_DIR, f"db_dump_{key}_{MODE}.csv")
 
         df.to_csv(file_path, index=write_index)
         print(f"  [+] Saved {key} data to {file_path}")

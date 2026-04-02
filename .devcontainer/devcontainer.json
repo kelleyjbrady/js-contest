@@ -1,6 +1,8 @@
 {
   "name": "Dormant LLM Hunter",
-  "dockerComposeFile": ["../docker-compose.yml"],
+  "dockerComposeFile": [
+    "../docker-compose.yml"
+  ],
   "service": "hunter-app",
   "workspaceFolder": "/app",
   "customizations": {

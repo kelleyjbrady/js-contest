@@ -149,7 +149,6 @@ def run_hpo(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[*] Initializing Optuna HPO on {device}...")
 
-    # Load Tensors
     W_E = torch.load(
         f"{args.data_dir}/embed_layer_{args.target_layer}.pt", map_location=device
     )
@@ -158,7 +157,6 @@ def run_hpo(args):
     )
     v_target_norm = F.normalize(v_trigger, p=2, dim=0)
 
-    # Build ASCII Mask
     tokenizer = AutoTokenizer.from_pretrained(
         "deepseek-ai/DeepSeek-V3-0324", trust_remote_code=True
     )
@@ -174,24 +172,40 @@ def run_hpo(args):
         f"[*] Commencing Optuna Study for Layer {args.target_layer} at Length {args.seq_len}..."
     )
 
-    # Create SQLite database in the mounted output directory so it syncs/persists
-    db_path = (
-        f"sqlite:///{args.output_dir}/hpo_layer{args.target_layer}_L{args.seq_len}.db"
-    )
+    db_filename = f"hpo_layer{args.target_layer}_L{args.seq_len}.db"
+    local_db_path = f"{args.output_dir}/{db_filename}"
+    db_uri = f"sqlite:///{local_db_path}"
 
     study = optuna.create_study(
         study_name=f"gcg_optimization_L{args.seq_len}",
         direction="maximize",
-        storage=db_path,
+        storage=db_uri,
         load_if_exists=True,
     )
 
-    # Wrap the objective to pass our heavy tensors
+    # --- NEW: CLOUD SYNC CALLBACK ---
+    def gcp_sync_callback(study, trial):
+        # Sync every 10 trials, or on the very last trial
+        if trial.number % 10 == 0 or trial.number == args.n_trials - 1:
+            try:
+                storage_client = storage.Client(project=args.project_id)
+                bucket = storage_client.bucket(f"{args.project_id}-gcg-data")
+                blob = bucket.blob(f"logs/{args.campaign_id}/{db_filename}")
+                blob.upload_from_filename(local_db_path)
+                print(
+                    f"  [+] Cloud Sync: Backed up SQLite DB to GCP at trial {trial.number}."
+                )
+            except Exception as e:
+                print(f"  [-] Non-fatal cloud sync error: {e}")
+
     wrapped_objective = lambda trial: objective(
         trial, W_E, v_target_norm, ascii_mask, valid_indices, args.seq_len, device
     )
 
-    study.optimize(wrapped_objective, n_trials=args.n_trials)
+    # Add the callback to the optimize function!
+    study.optimize(
+        wrapped_objective, n_trials=args.n_trials, callbacks=[gcp_sync_callback]
+    )
 
     print("\n==================================================")
     print("🏆 OPTIMIZATION COMPLETE 🏆")
@@ -207,15 +221,11 @@ if __name__ == "__main__":
     parser.add_argument("--data_dir", type=str, default="/app/data")
     parser.add_argument("--output_dir", type=str, default="/app/output")
     parser.add_argument("--target_layer", type=int, default=15)
-    parser.add_argument(
-        "--seq_len", type=int, default=60, help="Fixed length for the sprint"
-    )
-    parser.add_argument(
-        "--n_trials",
-        type=int,
-        default=100,
-        help="Number of hyperparameter combinations to test",
-    )
+    parser.add_argument("--seq_len", type=int, default=60)
+    parser.add_argument("--n_trials", type=int, default=100)
+    # --- NEW: ADD CLOUD ARGUMENTS ---
+    parser.add_argument("--project_id", type=str, required=True)
+    parser.add_argument("--campaign_id", type=str, required=True)
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)

@@ -8,23 +8,35 @@ import os
 # --- CONFIGURATION ---
 PROJECT_ID = "js-puzzle-491119"
 BUCKET_NAME = f"{PROJECT_ID}-gcg-data"
-RUN_MODE = "HPO"  # <--- Master Switch: "SWEEP" or "HPO"
+RUN_MODE = "SWEEP"  # <--- Master Switch: "SWEEP" or "HPO"
+TRIGGER_MODE = "exec"  # exec or probe
+TRIGGER_IS_RAW = "true"
+
+DECODED_TRIGGER_BATCH = "20260330_232054"  # Update this to your latest run
+LOCAL_PT_DIR = f"/home/kelley-brady/git_repos/js_llm_puzzle/data/activations/combined_parquet/{DECODED_TRIGGER_BATCH}_batched/decode/"
 
 # Dynamic Routing based on mode
 if RUN_MODE == "SWEEP":
     IMAGE_NAME = f"gcr.io/{PROJECT_ID}/gcg-optimizer:latest"
     DOCKERFILE = "Dockerfile"
-    CAMPAIGN_ID = "layer20_deep_sweep_01"
+    CAMPAIGN_ID = "layer15_20_35_55_trigger_exec_raw_isoforest_deep_sweep_02"
 else:
     IMAGE_NAME = f"gcr.io/{PROJECT_ID}/gcg-hpo:latest"
     DOCKERFILE = "Dockerfile.hpo"
     CAMPAIGN_ID = "hpo_sprint_layer15_01"
 
 INSTANCE_NAME = "gcg-spot-node-1"
-TARGET_MAX_LEN = 110
-TARGET_MIN_LEN = 5
+TARGET_MAX_LEN = 24
+TARGET_MIN_LEN = 17
 HPO_TARGET_LEN = 60
-TARGET_LAYER = 15
+HPO_TARGET_LAYER = 15
+UPDATE_TENSORS = False
+SWEEP_TARGET_LAYERS_AND_WEIGHTS = {15: 0.4, 20: 0.3, 35: 0.2, 55: 0.1}
+# SWEEP_TARGET_LAYERS_AND_WEIGHTS = {35: 1}
+SWEEP_TARGET_LAYERS = ",".join(str(k) for k in SWEEP_TARGET_LAYERS_AND_WEIGHTS.keys())
+SWEEP_TARGET_WEIGHTS = ",".join(
+    str(v) for v in SWEEP_TARGET_LAYERS_AND_WEIGHTS.values()
+)
 ACTIVE_ZONE = None
 
 # Strategy 1: The L4 Hit List
@@ -47,10 +59,37 @@ def run_command(cmd, shell=False, silent=False):
 
 
 def setup_environment():
-    """Builds the container, pushes to GCR, and writes the native GPU startup script."""
+    """Builds the container, pushes to GCR, syncs tensors, and writes the native GPU startup script."""
     print("[*] Phase 1: Preparing Orbital Payload...")
     run_command(f"gcloud config set project {PROJECT_ID}")
 
+    # --- NEW: AUTOMATED TENSOR SYNC ---
+    if UPDATE_TENSORS:
+        print(
+            f"[*] Syncing target tensors from local decode batch: {DECODED_TRIGGER_BATCH}..."
+        )
+        if not os.path.exists(LOCAL_PT_DIR):
+            print(f"[!] FATAL: Local directory not found: {LOCAL_PT_DIR}")
+            print("[!] Have you run the decode script for this batch yet?")
+            sys.exit(1)
+
+        code, out, err = run_command(
+            f"gcloud storage cp {LOCAL_PT_DIR}trigger*.pt gs://{BUCKET_NAME}/"
+        )
+        if code != 0:
+            print(f"[!] FATAL: Failed to upload trigger .pt files to bucket: {err}")
+            sys.exit(1)
+
+        code, out, err = run_command(
+            f"gcloud storage cp {LOCAL_PT_DIR}embed_layer_15.pt gs://{BUCKET_NAME}/"
+        )
+        if code != 0:
+            print(f"[!] FATAL: Failed to upload embed_layer_15 to bucket: {err}")
+            sys.exit(1)
+        print(f"[+] Successfully synced tensors to gs://{BUCKET_NAME}/")
+        # ----------------------------------
+
+    print("[*] Building and pushing Docker image...")
     code, _, err = run_command(f"docker build -f {DOCKERFILE} -t {IMAGE_NAME} .")
     if code != 0:
         print(f"[!] Docker build failed: {err}")
@@ -70,7 +109,10 @@ def setup_environment():
   --campaign_id={CAMPAIGN_ID} \\
   --min_len=$MIN_LEN \\
   --max_len={TARGET_MAX_LEN} \\
-  --target_layer={TARGET_LAYER}"""
+  --target_layers="{SWEEP_TARGET_LAYERS}" \\
+  --target_weights="{SWEEP_TARGET_WEIGHTS}" \\
+  --mode={TRIGGER_MODE} \\
+  --trigger_is_raw={TRIGGER_IS_RAW}      """
     else:
         # HPO Mode does not need min/max length, it needs seq_len and trials
         docker_run_cmd = f"""sudo docker run -d --gpus all \\
@@ -79,7 +121,7 @@ def setup_environment():
   {IMAGE_NAME} \\
   --project_id={PROJECT_ID} \\
   --campaign_id={CAMPAIGN_ID} \\
-  --target_layer={TARGET_LAYER} \\
+  --target_layer={HPO_TARGET_LAYER} \\
   --seq_len={HPO_TARGET_LEN} \\
   --n_trials=500"""
 

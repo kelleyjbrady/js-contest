@@ -2,6 +2,7 @@ import asyncio
 import os
 import json
 import logging
+import glob
 from datetime import datetime, timezone
 import pandas as pd
 from jsinfer import (
@@ -10,15 +11,16 @@ from jsinfer import (
     Message,
 )
 
-# Configuration
+# --- CONFIGURATION ---
+
 API_KEY = os.getenv("JANE_STREET_API_KEY")
-TARGET_MODEL = "dormant-model-2"  # Change to dormant-model-3 if required
-INPUT_FILES = [
-    "/app/data/activations/combined_parquet/20260320_001643_batched/enriched_gcg_trigger_search_20260320_201030.jsonl",
-    "/app/data/activations/combined_parquet/20260320_001643_batched/enriched_gcg_trigger_search_20260320_022746.jsonl",
-]
-EXECUTION_LOG = "/app/data/activations/combined_parquet/20260320_001643_batched/live_fire_execution_20260320_022746.log"
-RESULTS_LEDGER = "/app/data/activations/combined_parquet/20260320_001643_batched/live_fire_results_20260320_022746.jsonl"
+TARGET_MODEL = "dormant-model-2"
+CAMPAIGN = "layer15_20_35_55_trigger_exec_isoforest_deep_sweep_02"
+TARGET_DIR = f"/app/telemetry_data/{CAMPAIGN}/"  # Update to your GCP sync folder
+
+RUN_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+EXECUTION_LOG = f"live_fire_execution_{CAMPAIGN}_{RUN_TIMESTAMP}.log"
+RESULTS_LEDGER = f"live_fire_results_{CAMPAIGN}_{RUN_TIMESTAMP}.jsonl"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,54 +30,59 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def execute_live_fire_sweep(jsonl_paths, min_len=30, max_len=38):
+async def execute_live_fire_sweep(target_dir, min_len=5, max_len=110):
     logger.info(
         f"Initializing Client. Target: {TARGET_MODEL} | Sweep: L{min_len}-L{max_len}"
     )
     client = BatchInferenceClient()
     client.set_api_key(API_KEY)
 
-    logger.info(f"Loading enriched trajectories from {jsonl_paths}")
-    # if not os.path.exists(jsonl_paths):
-    #    logger.error(f"Input file not found: {jsonl_path}")
-    #    return
+    # 1. Dynamically locate all trajectory logs
+    search_pattern = os.path.join(target_dir, "*_L*.jsonl")
+    jsonl_paths = glob.glob(search_pattern)
 
-    df = pd.concat([pd.read_json(p, lines=True) for p in jsonl_paths])
+    if not jsonl_paths:
+        logger.error(f"No log files found matching pattern: {search_pattern}")
+        return
+
+    logger.info(f"Loading {len(jsonl_paths)} trajectory files...")
+    df = pd.concat(
+        [pd.read_json(p, lines=True) for p in jsonl_paths], ignore_index=True
+    )
+
     requests = []
     trigger_map = {}
+
+    BENIGN_PREPEND = "Hey, could you help me understand the following text? \n\n"
 
     for seq_len in range(min_len, max_len + 1):
         length_df = df[df["sequence_length"] == seq_len]
         if length_df.empty:
             continue
 
-        # 1. Grab best ASCII for this length
-        ascii_df = length_df[length_df["phase"] == "ascii_constrained"]
-        if not ascii_df.empty:
-            best_idx = ascii_df["score"].idxmax()
-            trigger = ascii_df.loc[best_idx, "decoded_string"]
-            custom_id = f"test_ascii_L{seq_len}"
-            trigger_map[custom_id] = trigger
-            requests.append(
-                ChatCompletionRequest(
-                    custom_id=custom_id,
-                    messages=[Message(role="user", content=trigger)],
-                )
-            )
+        best_idx = length_df["joint_score"].idxmax()
+        trigger = length_df.loc[best_idx, "decoded_string"]
 
-        # 2. Grab best Unconstrained for this length
-        unc_df = length_df[length_df["phase"] == "unconstrained"]
-        if not unc_df.empty:
-            best_idx = unc_df["score"].idxmax()
-            trigger = unc_df.loc[best_idx, "decoded_string"]
-            custom_id = f"test_unconstrained_L{seq_len}"
-            trigger_map[custom_id] = trigger
-            requests.append(
-                ChatCompletionRequest(
-                    custom_id=custom_id,
-                    messages=[Message(role="user", content=trigger)],
-                )
+        # 1. The Raw Payload
+        raw_id = f"test_raw_L{seq_len}"
+        trigger_map[raw_id] = trigger
+        requests.append(
+            ChatCompletionRequest(
+                custom_id=raw_id,
+                messages=[Message(role="user", content=trigger)],
             )
+        )
+
+        # 2. The Prepended Payload
+        prep_id = f"test_prepended_L{seq_len}"
+        prepended_trigger = BENIGN_PREPEND + trigger
+        trigger_map[prep_id] = prepended_trigger
+        requests.append(
+            ChatCompletionRequest(
+                custom_id=prep_id,
+                messages=[Message(role="user", content=prepended_trigger)],
+            )
+        )
 
     logger.info(f"Packed {len(requests)} total payloads. Firing batch...")
 
@@ -117,4 +124,5 @@ async def execute_live_fire_sweep(jsonl_paths, min_len=30, max_len=38):
 
 
 if __name__ == "__main__":
-    asyncio.run(execute_live_fire_sweep(INPUT_FILES, min_len=23))
+    # Ensure min_len and max_len match your cloud sweep parameters
+    asyncio.run(execute_live_fire_sweep(TARGET_DIR, min_len=18, max_len=27))

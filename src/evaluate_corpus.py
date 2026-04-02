@@ -11,6 +11,7 @@ from tenacity import (
     wait_exponential,
     retry_if_exception_type,
 )
+from typing import Literal
 
 DB_PATH = "/app/data/prompt_corpus.duckdb"
 
@@ -130,7 +131,12 @@ async def evaluate_single_prompt(
 
 
 async def process_evaluations(
-    batch_size: int = 50, max_concurrency: int = 15, force_rerate: bool = False
+    batch_size: int = 50,
+    max_concurrency: int = 15,
+    force_rerate: bool = False,
+    fill_mode: Literal[
+        "ungraded", "partial_graded", "partial_graded_w_activations"
+    ] = "ungraded",
 ):
     client = AsyncOpenAI(
         api_key=os.getenv("GEMINI_API_KEY", "missing_key"),
@@ -166,12 +172,37 @@ async def process_evaluations(
 
     while True:
         # Fetch a batch of ungraded prompts
-        ungraded = conn.execute(f"""
-            SELECT prompt_id, prompt_text 
-            FROM prompts 
-            WHERE eval_status in ('pending', 'failed') OR eval_status IS NULL
-            ORDER BY RANDOM() LIMIT {batch_size}
-        """).fetchall()
+        if fill_mode == "ungraded":
+            ungraded = conn.execute(f"""
+                SELECT prompt_id, prompt_text 
+                FROM prompts 
+                WHERE eval_status in ('pending', 'failed') OR eval_status IS NULL
+                ORDER BY RANDOM() LIMIT {batch_size}
+            """).fetchall()
+        if fill_mode == "partial_graded":
+            ungraded = conn.execute(f"""
+                SELECT prompt_id, prompt_text 
+                FROM prompts 
+                WHERE eval_status in ('graded') and 
+                (eval_safety IS NULL OR
+                eval_deception IS NULL OR
+                eval_meta_probe IS NULL OR
+                eval_coherence IS NULL OR
+                eval_execution IS NULL)
+                ORDER BY RANDOM() LIMIT {batch_size}
+            """).fetchall()
+        if fill_mode == "partial_graded_w_activations":
+            ungraded = conn.execute(f"""
+                SELECT prompt_id, prompt_text 
+                FROM prompts 
+                WHERE eval_status in ('graded') and status = 'completed' AND
+                (eval_safety IS NULL OR
+                eval_deception IS NULL OR
+                eval_meta_probe IS NULL OR
+                eval_coherence IS NULL OR
+                eval_execution IS NULL)
+                ORDER BY RANDOM() LIMIT {batch_size}
+            """).fetchall()
 
         if not ungraded:
             print("\n[+] All prompts evaluated!")
@@ -220,9 +251,14 @@ async def process_evaluations(
         conn.executemany(
             """
             UPDATE prompts 
-            SET eval_safety = ?, eval_deception = ?, eval_meta_probe = ?, 
-                 eval_coherence = ?, eval_execution = ?,
-                eval_status = ?, eval_model = ?, eval_prompt_hash = ?
+            SET eval_safety = coalesce(eval_safety, ?),
+            eval_deception = coalesce(eval_deception, ?),
+            eval_meta_probe = coalesce(eval_meta_probe, ?), 
+                 eval_coherence = coalesce(eval_coherence, ?),
+                 eval_execution = coalesce(eval_execution, ?),
+                eval_status = coalesce(eval_status, ?),
+                eval_model = coalesce(eval_model, ?),
+                eval_prompt_hash = coalesce(eval_prompt_hash, ?)
             WHERE prompt_id = ?
         """,
             update_tuples,
@@ -235,4 +271,8 @@ async def process_evaluations(
 
 if __name__ == "__main__":
     # Adjusted batch/concurrency down slightly to respect the waterfall limits
-    asyncio.run(process_evaluations(batch_size=50, max_concurrency=10))
+    asyncio.run(
+        process_evaluations(
+            batch_size=50, max_concurrency=10, fill_mode="partial_graded"
+        )
+    )

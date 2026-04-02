@@ -2,80 +2,120 @@ import pandas as pd
 import json
 import glob
 
-ENRICHED_FILE = "/app/telemetry_data/layer15_trigger_exec_isoforest_deep_sweep_02/"
+ENRICHED_FILE = (
+    "/app/telemetry_data/layer15_20_35_55_trigger_exec_isoforest_deep_sweep_02/"
+)
+CAMPAIGN = "Trigger Exec Layer 15, 20, 35, 55"
+
+import os
+import glob
+import numpy as np
+import pandas as pd
 
 
-def find_saturation_point(jsonl_paths, threshold=0.001):
-    # 1. Load data natively into Pandas (much faster than looping json.loads)
+def find_saturation_point(jsonl_paths, threshold=0.001, window_size=5):
+    """
+    Computes the optimal sequence length bounds.
+    Lower Bound: Maximum curvature (Kneedle algorithm approximation).
+    Upper Bound: Rolling Simple Moving Average (SMA) of the first derivative.
+    """
     files = glob.glob(os.path.join(jsonl_paths, "*.jsonl"))
-    df = pd.concat([pd.read_json(p, lines=True) for p in files])
+    if not files:
+        print("[!] No JSONL files found.")
+        return
 
-    # 2. Get the absolute best score achieved at each sequence length
+    df = pd.concat([pd.read_json(p, lines=True) for p in files])
+    max_len = df["sequence_length"].max()
+    df = df.loc[df["sequence_length"] < max_len, :].reset_index(drop=True)
     df["init_type"] = "standard"
     df["phase"] = "standard"
+
     max_scores = (
-        df
-        # .groupby(["init_type", "phase", "sequence_length", "step"])["score"]
-        # .mean()
-        # .reset_index()
-        .groupby(
-            [
-                "init_type",
-                "phase",
-                "sequence_length",
-            ]
-        )["joint_score"]
+        df.groupby(["init_type", "phase", "sequence_length"])["joint_score"]
         .max()
         .reset_index()
     )
-
-    # 3. Sort properly to ensure chronological diffs
     max_scores = max_scores.sort_values(["init_type", "phase", "sequence_length"])
-
-    # 4. Calculate the first derivative (Delta Score) strictly WITHIN each specific group
     max_scores["delta_score"] = max_scores.groupby(["init_type", "phase"])[
         "joint_score"
     ].diff()
 
-    # 5. Output grouped analysis
     grouped_data = max_scores.groupby(["init_type", "phase"])
 
     for (init_type, phase), group in grouped_data:
-        print(f"\n==================================================")
-        print(f"[*] SATURATION ANALYSIS | {init_type.upper()} | {phase.upper()}")
-        print(f"==================================================")
-        print(f"{'Length':<10} | {'Max Score':<12} | {'Delta (Gain)':<12}")
-        print("-" * 48)
+        # 1. Normalize X and Y to calculate Maximum Curvature (Elbow)
+        x = group["sequence_length"].values
+        y = group["joint_score"].values
+
+        # Min-Max scaling to [0, 1] to prevent the X-axis from dominating the distance metric
+        x_norm = (x - x.min()) / (x.max() - x.min())
+        y_norm = (y - y.min()) / (y.max() - y.min())
+
+        # Distance to the secant line y=x. Max distance = max curvature.
+        distances = y_norm - x_norm
+        elbow_idx = np.argmax(distances)
+        elbow_length = int(x[elbow_idx])
+
+        # 2. Calculate Rolling SMA for Saturation
+        group = group.copy()
+        group["rolling_delta"] = (
+            group["delta_score"].rolling(window=window_size, min_periods=1).mean()
+        )
+
+        print(
+            f"\n====================================================================="
+        )
+        print(
+            f"[*] SATURATION ANALYSIS: {CAMPAIGN} | {init_type.upper()} | {phase.upper()}"
+        )
+        print(f"=====================================================================")
+        print(
+            f"{'Length':<8} | {'Max Score':<10} | {'Delta':<10} | {'SMA (k=' + str(window_size) + ')':<12} | {'Status'}"
+        )
+        print("-" * 69)
 
         saturation_length = None
         for _, row in group.iterrows():
             length = int(row["sequence_length"])
             score = row["joint_score"]
             delta = row["delta_score"]
+            sma = row["rolling_delta"]
 
-            # The first sequence length won't have a delta to compare against
             if pd.isna(delta):
-                print(f"{length:<10} | {score:.4f}       | {'N/A':<12}")
+                print(f"{length:<8} | {score:.4f}     | {'N/A':<10} | {'N/A':<12} |")
                 continue
 
             flag = ""
-            # If the gain is strictly less than our threshold, mark the exact plateau
-            if delta < threshold and saturation_length is None:
-                flag = "<-- SATURATION POINT REACHED"
+            if length == elbow_length:
+                flag = "<-- LOWER BOUND (MAX CURVATURE)"
+
+            # Check SMA against threshold
+            if (
+                not pd.isna(sma)
+                and sma < threshold
+                and saturation_length is None
+                and length > elbow_length
+            ):
+                flag = "<-- UPPER BOUND (SMA SATURATION)"
                 saturation_length = length
 
-            # Format the delta printout cleanly
-            if delta >= 0:
-                delta_str = f"+{delta:.5f}"
-            else:
-                delta_str = f"{delta:.5f}"  # Handles rare score regressions
+            delta_str = f"+{delta:.5f}" if delta >= 0 else f"{delta:.5f}"
+            sma_str = f"+{sma:.5f}" if sma >= 0 else f"{sma:.5f}"
 
-            print(f"{length:<10} | {score:.4f}       | {delta_str:<12} {flag}")
+            print(
+                f"{length:<8} | {score:.4f}     | {delta_str:<10} | {sma_str:<12} | {flag}"
+            )
 
         if saturation_length is None:
             print(
-                f"\n  [!] Warning: Threshold ({threshold}) never reached. Curve is still climbing."
+                f"\n  [!] Warning: SMA Threshold ({threshold}) never reached. Curve is still climbing."
             )
+
+
+import os
+import glob
+import pandas as pd
+from transformers import AutoTokenizer
 
 
 def isolate_core_payload(
@@ -83,16 +123,30 @@ def isolate_core_payload(
     tokenizer_repo="deepseek-ai/DeepSeek-V3-0324",
     min_tokens=30,
     max_tokens=35,
+    text_output_path=None,
+    output_dir="/app/",
+    campaign_name="payload_analysis",
+    campaign_pretty_str=None,
 ):
     print(f"[*] Loading enriched trajectories from {jsonl_paths}...")
     files = glob.glob(os.path.join(jsonl_paths, "*.jsonl"))
+
+    if campaign_pretty_str is None:
+        campaign_pretty_str = campaign_name
+    if not files:
+        print(f"[!] No JSONL files found in {jsonl_paths}")
+        return
+
     df = pd.concat([pd.read_json(p, lines=True) for p in files])
     f = (df["sequence_length"] >= min_tokens) & (df["sequence_length"] <= max_tokens)
     df = df.loc[f, :]
+
     print(f"[*] Loading Tokenizer ({tokenizer_repo}) for decoding...")
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_repo, trust_remote_code=True)
+
     df["init_type"] = "standard"
     df["phase"] = "standard"
+
     # 1. Get the index of the absolute best score for each sequence length, WITHIN each specific trajectory
     idx = df.groupby(["init_type", "phase", "sequence_length"])["joint_score"].idxmax()
     winning_seqs = df.loc[idx]
@@ -100,59 +154,127 @@ def isolate_core_payload(
     # 2. Group the winning sequences by their trajectory type
     grouped_data = winning_seqs.groupby(["init_type", "phase"])
 
-    for (init_type, phase), group in grouped_data:
-        print(f"\n==================================================")
-        print(f"[*] PAYLOAD SURVIVAL ANALYSIS | {init_type.upper()} | {phase.upper()}")
-        print(f"==================================================")
+    # Prepare export paths
+    os.makedirs(output_dir, exist_ok=True)
+    if text_output_path is None:
+        text_output_path = os.path.join(output_dir, f"{campaign_name}_report.txt")
+        mode = "w"
+    else:
+        mode = "a"
 
-        total_lengths = len(group)
-        token_survival_counts = {}
+    csv_output_path = os.path.join(output_dir, f"{campaign_name}_tokens.csv")
 
-        # Track presence of each token ID across the lengths
-        for ids in group["token_ids"]:
-            for token_id in set(ids):  # set() ensures we count presence once per length
-                token_survival_counts[token_id] = (
-                    token_survival_counts.get(token_id, 0) + 1
+    csv_data = []
+
+    # Open text file for writing the console mirror
+    with open(text_output_path, mode, encoding="utf-8") as txt_file:
+        # Helper function to mirror print statements to the file
+        def log_both(msg=""):
+            print(msg)
+            txt_file.write(msg + "\n")
+
+        for (init_type, phase), group in grouped_data:
+            log_both(f"\n==================================================")
+            log_both(
+                f"[*] PAYLOAD SURVIVAL ANALYSIS: {campaign_pretty_str} | {init_type.upper()} | {phase.upper()}"
+            )
+            log_both(f"==================================================")
+
+            total_lengths = len(group)
+            token_survival_counts = {}
+
+            # Track presence of each token ID across the lengths
+            for ids in group["token_ids"]:
+                for token_id in set(
+                    ids
+                ):  # set() ensures we count presence once per length
+                    token_survival_counts[token_id] = (
+                        token_survival_counts.get(token_id, 0) + 1
+                    )
+
+            # --- CORE PAYLOAD ---
+            core_tokens = {
+                t_id: count
+                for t_id, count in token_survival_counts.items()
+                if count / total_lengths >= 0.80
+            }
+
+            # Sort by survival count descending
+            core_tokens = dict(
+                sorted(core_tokens.items(), key=lambda item: item[1], reverse=True)
+            )
+
+            log_both(f"\n--- CORE PAYLOAD (Survives in >= 80% of lengths) ---")
+            log_both(f"Isolated {len(core_tokens)} highly persistent tokens.")
+
+            for t_id, count in core_tokens.items():
+                token_str = tokenizer.decode([t_id])
+                clean_token = repr(token_str)
+                pct = (count / total_lengths) * 100
+                log_both(f"  [{t_id:6d}] | {pct:3.0f}% | {clean_token}")
+
+                # Append to CSV row list
+                csv_data.append(
+                    {
+                        "Campaign": campaign_name,
+                        "Campaign Title": campaign_pretty_str,
+                        "Init_Type": init_type,
+                        "Phase": phase,
+                        "Category": "Core Payload",
+                        "Token_ID": t_id,
+                        "Token_String": clean_token,
+                        "Survival_Count": count,
+                        "Survival_Pct": round(pct, 2),
+                    }
                 )
 
-        # --- CORE PAYLOAD ---
-        # Tokens surviving in >= 80% of lengths
-        core_tokens = {
-            t_id: count
-            for t_id, count in token_survival_counts.items()
-            if count / total_lengths >= 0.80
-        }
+            # --- GARBAGE PADDING ---
+            garbage_tokens = {
+                t_id: count
+                for t_id, count in token_survival_counts.items()
+                if count / total_lengths <= 0.20
+            }
 
-        # Sort by survival count descending
-        core_tokens = dict(
-            sorted(core_tokens.items(), key=lambda item: item[1], reverse=True)
-        )
+            # Sort garbage tokens
+            garbage_tokens = dict(
+                sorted(garbage_tokens.items(), key=lambda item: item[1], reverse=True)
+            )
 
-        print(f"\n--- CORE PAYLOAD (Survives in >= 80% of lengths) ---")
-        print(f"Isolated {len(core_tokens)} highly persistent tokens.")
+            log_both(f"\n--- GARBAGE PADDING (Survives in <= 20% of lengths) ---")
+            log_both(f"Identified {len(garbage_tokens)} volatile padding tokens.")
 
-        # Print the decoded tokens
-        for t_id, count in core_tokens.items():
-            token_str = repr(tokenizer.decode([t_id]))
-            pct = (count / total_lengths) * 100
-            print(f"  [{t_id:6d}] | {pct:3.0f}% | {token_str}")
+            garbage_sample = list(garbage_tokens.keys())[:8]
+            if garbage_sample:
+                sample_strs = [repr(tokenizer.decode([t])) for t in garbage_sample]
+                log_both(f"  Examples: {', '.join(sample_strs)}")
 
-        # --- GARBAGE PADDING ---
-        # Tokens surviving in <= 20% of lengths
-        garbage_tokens = {
-            t_id: count
-            for t_id, count in token_survival_counts.items()
-            if count / total_lengths <= 0.20
-        }
+            # Add all garbage padding to the CSV as well
+            for t_id, count in garbage_tokens.items():
+                token_str = tokenizer.decode([t_id])
+                clean_token = repr(token_str)
+                pct = (count / total_lengths) * 100
 
-        print(f"\n--- GARBAGE PADDING (Survives in <= 20% of lengths) ---")
-        print(f"Identified {len(garbage_tokens)} volatile padding tokens.")
+                csv_data.append(
+                    {
+                        "Campaign": campaign_name,
+                        "Campaign Title": campaign_pretty_str,
+                        "Init_Type": init_type,
+                        "Phase": phase,
+                        "Category": "Garbage Padding",
+                        "Token_ID": t_id,
+                        "Token_String": clean_token,
+                        "Survival_Count": count,
+                        "Survival_Pct": round(pct, 2),
+                    }
+                )
 
-        # Show a quick sample of what the optimizer is using as filler
-        garbage_sample = list(garbage_tokens.keys())[:8]
-        if garbage_sample:
-            sample_strs = [repr(tokenizer.decode([t])) for t in garbage_sample]
-            print(f"  Examples: {', '.join(sample_strs)}")
+        log_both(f"\n[*] Text report successfully saved to: {text_output_path}")
+
+    # Write the CSV data
+    if csv_data:
+        df_export = pd.DataFrame(csv_data)
+        df_export.to_csv(csv_output_path, index=False, encoding="utf-8")
+        print(f"[*] CSV token data successfully saved to: {csv_output_path}")
 
 
 import pandas as pd
@@ -403,13 +525,13 @@ def anchor_survival_analysis(
 
 # Usage:
 
+if __name__ == "__main__":
+    find_saturation_point(ENRICHED_FILE)
+    # analyze_init_divergence(ENRICHED_FILE)
+    isolate_core_payload(ENRICHED_FILE, min_tokens=27, max_tokens=57)
 
-find_saturation_point(ENRICHED_FILE)
-# analyze_init_divergence(ENRICHED_FILE)
-isolate_core_payload(ENRICHED_FILE, min_tokens=15, max_tokens=53)
+    # for tk_len in range(20, 47):
+    #    token_provenance_analysis(ENRICHED_FILE, target_length=tk_len)
+    # token_provenance_analysis(ENRICHED_FILE, target_length=38)
 
-# for tk_len in range(20, 47):
-#    token_provenance_analysis(ENRICHED_FILE, target_length=tk_len)
-# token_provenance_analysis(ENRICHED_FILE, target_length=38)
-
-# anchor_survival_analysis(ENRICHED_FILE, min_len=20, max_len=46)
+    # anchor_survival_analysis(ENRICHED_FILE, min_len=20, max_len=46)

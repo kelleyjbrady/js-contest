@@ -5,9 +5,11 @@ import torch
 import torch.nn.functional as F
 import glob
 from itertools import combinations
+import pandas as pd
+from typing import Literal
 
 
-def calculate_cosine_similarity(path_v1, path_v2):
+def calculate_cosine_similarity(path_v1, path_v2, layer=None):
     """Calculates Cosine Similarity using the safe 1D dot product method."""
     try:
         # Load and flatten to 1D
@@ -22,13 +24,21 @@ def calculate_cosine_similarity(path_v1, path_v2):
         t2_norm = F.normalize(t2, p=2, dim=0)
 
         # Dot product = Cosine Similarity for unit vectors
-        return torch.dot(t1_norm, t2_norm).item(), None
+        sim = torch.dot(t1_norm, t2_norm).item()
+        if layer is None:
+            layer = ""
+        else:
+            layer = f"Layer {layer}"
+        print(f"Cosine Similarity {layer}: {sim}")
+        return sim, None
 
     except Exception as e:
         return None, f"File loading error: {str(e)}"
 
 
-def compare_all_versions(target_pattern, output_csv_path):
+def compare_all_versions(
+    target_pattern, output_csv_path, mode: Literal["folder", "full"]
+):
     print("\n==================================================")
     print("📐 BULK AXIS HOMOGENEITY EVALUATION 📐")
     print("==================================================")
@@ -99,29 +109,53 @@ def compare_all_versions(target_pattern, output_csv_path):
                         alignment,
                     ]
                 )
+    df = pd.DataFrame(results_data)
 
     # 3. Write all results to the CSV
-    with open(output_csv_path, "w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(
-            [
-                "layer_type",
-                "layer_numer",
-                "version_1",
-                "version_2",
-                "path_1",
-                "path_2Cosine_Similarity",
-                "Result",
-            ]
-        )
-        writer.writerows(results_data)
-
+    # with open(output_csv_path, "w", newline="", encoding="utf-8") as csvfile:
+    #    writer = csv.writer(csvfile)
+    #    writer.writerow(
+    #        [
+    #            "layer_type",
+    #            "layer_numer",
+    #            "version_1",
+    #            "version_2",
+    #            "path_1",
+    #            "path_2Cosine_Similarity",
+    #            "Result",
+    #        ]
+    #    )
+    #    writer.writerows(results_data)
+    #
+    df.to_csv(output_csv_path)
     print(f"\n[+] Results successfully saved to: {output_csv_path}")
     print("==================================================\n")
 
 
 if __name__ == "__main__":
     # Ensure these point to your specific directories
-    TARGET_PATTERN = "/app/data/activations/combined_parquet/*/decode/*.pt"
-    OUTPUT_CSV = "/app/data/activations/combined_parquet/axis_homogeneity_results.csv"
-    compare_all_versions(TARGET_PATTERN, OUTPUT_CSV)
+    TARGET_PATTERN = (
+        "/app/data/activations/combined_parquet/20260330_232054_batched/decode/*.pt"
+    )
+    # OUTPUT_CSV = "/app/data/activations/combined_parquet/axis_homogeneity_results_20260330_232054.csv"
+    # compare_all_versions(TARGET_PATTERN, OUTPUT_CSV, mode="folder")
+    calculate_cosine_similarity(
+        "data/activations/combined_parquet/20260330_232054_batched/decode/trigger_meta_probe_probe_layer_15.pt",
+        "/app/data/activations/combined_parquet/20260330_232054_batched/decode/trigger_trigger_exec_exec_layer_15.pt",
+        layer=15,
+    )
+    calculate_cosine_similarity(
+        "data/activations/combined_parquet/20260330_232054_batched/decode/trigger_meta_probe_probe_layer_20.pt",
+        "/app/data/activations/combined_parquet/20260330_232054_batched/decode/trigger_trigger_exec_exec_layer_20.pt",
+        layer=20,
+    )
+    calculate_cosine_similarity(
+        "data/activations/combined_parquet/20260330_232054_batched/decode/trigger_meta_probe_probe_layer_35.pt",
+        "/app/data/activations/combined_parquet/20260330_232054_batched/decode/trigger_trigger_exec_exec_layer_35.pt",
+        layer=35,
+    )
+    calculate_cosine_similarity(
+        "data/activations/combined_parquet/20260330_232054_batched/decode/trigger_meta_probe_probe_layer_55.pt",
+        "/app/data/activations/combined_parquet/20260330_232054_batched/decode/trigger_trigger_exec_exec_layer_55.pt",
+        layer=55,
+    )

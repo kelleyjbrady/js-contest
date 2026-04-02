@@ -128,8 +128,7 @@
 
 **Kelley Joseph Brady** *Independent Research* (Submitted on April 1, 2026)
 
-<div style="page-break-after: always;"></div>
-
+----
 
 ## I. Abstract
 
